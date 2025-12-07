@@ -1,79 +1,102 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
+const helmet = require('helmet');
+const morgan = require('morgan');
+require('dotenv').config();
+const http = require('http');
+const socketIo = require('socket.io');
 
-// Load environment variables
-dotenv.config();
+// Import database connection
+const { testConnection } = require('./config/database');
 
-// Initialize express app
+// Import routes
+const authRoutes = require('./routes/authRoutes');
+const expenseRoutes = require('./routes/expenseRoutes');
+const analysisRoutes = require('./routes/analysisRoutes');
+
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+    cors: {
+        origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+        methods: ["GET", "POST"]
+    }
+});
 
 // Middleware
+app.use(helmet());
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
     credentials: true
 }));
+app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Test route
-app.get('/', (req, res) => {
-    res.json({
-        message: 'Welcome to Smart Budget & Expense Analyzer API',
-        project: 'TU BCA 6th Semester Project II',
-        author: 'niranjan',
-        endpoints: {
-            auth: '/api/auth',
-            expenses: '/api/expenses',
-            analysis: '/api/analysis'
-        }
+// Socket.io connection
+io.on('connection', (socket) => {
+    console.log('🔌 New client connected:', socket.id);
+    
+    socket.on('joinRoom', (userId) => {
+        socket.join(`user_${userId}`);
+        console.log(`User ${userId} joined room`);
+    });
+    
+    socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id);
     });
 });
 
-// Health check route
+// Make io accessible to routes
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
+
+// Health check endpoint
 app.get('/api/health', (req, res) => {
-    res.status(200).json({
-        status: 'OK',
-        timestamp: new Date().toISOString(),
-        service: 'Expense Analyzer API',
-        version: '1.0.0'
+    res.json({ 
+        status: 'OK', 
+        message: 'Smart Budget Analyzer API is running',
+        timestamp: new Date().toISOString()
     });
 });
 
-// Import routes (we'll create these next)
-// const authRoutes = require('./routes/authRoutes');
-// const expenseRoutes = require('./routes/expenseRoutes');
-// const analysisRoutes = require('./routes/analysisRoutes');
-
-// Use routes
-// app.use('/api/auth', authRoutes);
-// app.use('/api/expenses', expenseRoutes);
-// app.use('/api/analysis', analysisRoutes);
-
-// 404 handler
-app.use('*', (req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'API endpoint not found'
-    });
-});
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/analysis', analysisRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
         success: false,
-        message: 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? err.message : {}
+        message: 'Something went wrong!',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
 
-// Start server
+// 404 handler
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        message: 'Route not found'
+    });
+});
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`✅ Server is running on port ${PORT}`);
-    console.log(`📚 Project: Smart Budget & Expense Analyzer`);
-    console.log(`🎓 TU BCA 6th Semester Project II`);
-    console.log(`🌐 http://localhost:${PORT}`);
-    console.log(`📊 API Health: http://localhost:${PORT}/api/health`);
+
+// Test database connection before starting server
+testConnection().then(isConnected => {
+    if (isConnected) {
+        server.listen(PORT, () => {
+            console.log(`🚀 Server running on port ${PORT}`);
+            console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+            console.log(`🔗 CORS Origin: ${process.env.CORS_ORIGIN}`);
+        });
+    } else {
+        console.error('❌ Failed to connect to database. Server not started.');
+        process.exit(1);
+    }
 });

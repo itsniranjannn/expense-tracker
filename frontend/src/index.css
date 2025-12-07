@@ -36,4 +36,50 @@
   .input-field {
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500;
   }
+  /* Custom classes for navigation */
+.nav-link {
+  @apply flex items-center px-4 py-3 text-gray-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all duration-200 gap-3;
+}
+
+.nav-link.active {
+  @apply text-primary-600 bg-primary-50 font-semibold border-r-4 border-primary-500;
+}
+
+/* Button styles */
+.btn-primary {
+  @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2.5 px-6 rounded-lg transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-opacity-50 active:scale-95 shadow-sm hover:shadow-md;
+}
+
+.btn-secondary {
+  @apply bg-white hover:bg-gray-50 text-gray-700 font-medium py-2.5 px-6 rounded-lg border border-gray-300 transition-all duration-200 ease-in-out hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 active:scale-95 shadow-sm;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all duration-300;
+}
+
+/* Input styles */
+.input-field {
+  @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition duration-200 text-gray-700 placeholder-gray-400;
+}
+
+/* Animation classes */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
 }

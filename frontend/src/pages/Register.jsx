@@ -1,134 +1,114 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
-import { Wallet, User, Mail, Lock, Eye, EyeOff, Phone } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { User, Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 const Register = () => {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    password: '',
-    confirmPassword: ''
-  });
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { register } = useAuth();
   const navigate = useNavigate();
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-  };
-
-  const handleRegister = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match!');
+    if (password !== confirmPassword) {
+      alert('Passwords do not match!');
       return;
     }
-
-    setLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      toast.success('Account created successfully!');
-      navigate('/dashboard');
-      setLoading(false);
-    }, 1500);
+    setLoading(true);
+    const result = await register(name, email, password);
+    
+    if (result.success) {
+      navigate('/');
+    }
+    
+    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md"
+        transition={{ duration: 0.5 }}
+        className="max-w-md w-full"
       >
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Header */}
+        <div className="glass-card rounded-2xl p-8 shadow-2xl">
+          {/* Back Button */}
+          <Link
+            to="/login"
+            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-6"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back to Login
+          </Link>
+
+          {/* Title */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-full mb-4">
-              <Wallet className="w-8 h-8 text-primary-600" />
-            </div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
               Create Account
             </h1>
-            <p className="text-gray-600">Start managing your expenses smartly</p>
+            <p className="text-gray-600">Join Smart Budget Analyzer</p>
           </div>
 
           {/* Registration Form */}
-          <form onSubmit={handleRegister} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Name Field */}
             <div>
-              <label className="block text-gray-700 mb-2 font-medium">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Full Name
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="pl-10 input-field"
-                  placeholder="Enter your full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="input-field pl-10"
+                  placeholder="John Doe"
                   required
                 />
               </div>
             </div>
 
+            {/* Email Field */}
             <div>
-              <label className="block text-gray-700 mb-2 font-medium">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email Address
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="pl-10 input-field"
-                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input-field pl-10"
+                  placeholder="you@example.com"
                   required
                 />
               </div>
             </div>
 
+            {/* Password Field */}
             <div>
-              <label className="block text-gray-700 mb-2 font-medium">
-                Phone Number
-              </label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="tel"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  className="pl-10 input-field"
-                  placeholder="Enter your phone number"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2 font-medium">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Password
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="pl-10 pr-10 input-field"
-                  placeholder="Create a password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field pl-10 pr-10"
+                  placeholder="••••••••"
                   required
                 />
                 <button
@@ -136,67 +116,53 @@ const Register = () => {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
 
+            {/* Confirm Password */}
             <div>
-              <label className="block text-gray-700 mb-2 font-medium">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Confirm Password
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="pl-10 pr-10 input-field"
-                  placeholder="Confirm your password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="input-field pl-10"
+                  placeholder="••••••••"
                   required
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
               </div>
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full py-3 text-lg font-semibold mt-6 flex items-center justify-center gap-2"
+              className="w-full btn-primary py-3 text-lg font-semibold"
             >
-              {loading ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Creating Account...
-                </>
-              ) : (
-                'Create Account'
-              )}
+              {loading ? 'Creating Account...' : 'Create Account'}
             </button>
           </form>
 
-          {/* Links */}
-          <div className="text-center mt-6">
+          {/* Login Link */}
+          <div className="mt-6 text-center">
             <p className="text-gray-600">
               Already have an account?{' '}
-              <Link to="/login" className="text-primary-600 hover:text-primary-700 font-semibold">
-                Sign in here
+              <Link
+                to="/login"
+                className="text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Sign in
               </Link>
-            </p>
-          </div>
-
-          {/* Terms */}
-          <div className="mt-6 pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">
-              By creating an account, you agree to our Terms of Service and Privacy Policy.
-              This project is for academic purposes only.
             </p>
           </div>
         </div>

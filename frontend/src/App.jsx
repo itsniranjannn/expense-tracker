@@ -3,17 +3,16 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/common/PrivateRoute';
-import DashboardSimple from './pages/DashboardSimple';
+import ErrorBoundary from './components/common/ErrorBoundary';
+import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import ErrorBoundary from './components/common/ErrorBoundary';
 
 function App() {
   return (
     <ErrorBoundary>
-    <Router>
-      <AuthProvider>
-        <div className="min-h-screen">
+      <Router>
+        <AuthProvider>
           <Toaster 
             position="top-right"
             toastOptions={{
@@ -47,16 +46,17 @@ function App() {
             {/* Protected routes */}
             <Route path="/" element={
               <PrivateRoute>
-                <DashboardSimple />
+                <Dashboard />
               </PrivateRoute>
             } />
+            
+            {/* Add more routes as needed */}
             
             {/* Redirect to login if no route matches */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </div>
-      </AuthProvider>
-    </Router>
+        </AuthProvider>
+      </Router>
     </ErrorBoundary>
   );
 }

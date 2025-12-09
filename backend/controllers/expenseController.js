@@ -3,6 +3,7 @@ const Budget = require('../models/Budget');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { pool } = require('../config/database');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -260,30 +261,158 @@ const getRecentExpenses = async (req, res) => {
 
 // Get expenses by category
 const getCategoryBreakdown = async (req, res) => {
-  try {
-    const userId = req.user.userId;
+    try {
+        const userId = req.user.userId;
 
-    const breakdown = await Expense.getByCategory(userId);
-    
-    // Format the data properly
-    const formattedBreakdown = breakdown.map(item => ({
-      category: item.category || 'Other',
-      amount: parseFloat(item.total) || 0,
-      count: parseInt(item.count) || 0
-    }));
-    
-    res.json({
-      success: true,
-      breakdown: formattedBreakdown
-    });
-  } catch (error) {
-    console.error('Get category breakdown error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      breakdown: [] // Always return an array
-    });
-  }
+        const breakdown = await Expense.getByCategory(userId);
+        
+        res.json({
+            success: true,
+            breakdown
+        });
+    } catch (error) {
+        console.error('Get category breakdown error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
+// Get dashboard statistics
+const getDashboardStats = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        
+        // Get total expenses and amount
+        const [totalResult] = await pool.execute(
+            `SELECT COUNT(*) as count, SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ?`,
+            [userId]
+        );
+
+        // Get total categories
+        const [categoryResult] = await pool.execute(
+            `SELECT COUNT(DISTINCT category) as count 
+            FROM expenses 
+            WHERE user_id = ?`,
+            [userId]
+        );
+
+        // Get highest spending category
+        const [highestCategoryResult] = await pool.execute(
+            `SELECT category, SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            GROUP BY category 
+            ORDER BY total DESC 
+            LIMIT 1`,
+            [userId]
+        );
+
+        // Get recent expenses
+        const [recentExpenses] = await pool.execute(
+            `SELECT * FROM expenses 
+            WHERE user_id = ? 
+            ORDER BY expense_date DESC 
+            LIMIT 5`,
+            [userId]
+        );
+
+        // Get category distribution
+        const [categoryDistribution] = await pool.execute(
+            `SELECT category, SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            GROUP BY category`,
+            [userId]
+        );
+
+        res.json({
+            success: true,
+            data: {
+                stats: {
+                    totalExpenses: parseInt(totalResult[0]?.count || 0),
+                    totalAmount: parseFloat(totalResult[0]?.total || 0),
+                    totalCategories: parseInt(categoryResult[0]?.count || 0),
+                    highestCategory: highestCategoryResult[0] || { category: 'None', total: 0 },
+                    averageDailySpending: 0
+                },
+                recentExpenses,
+                categoryDistribution
+            }
+        });
+    } catch (error) {
+        console.error('Get dashboard stats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
+// Get monthly trend
+const getMonthlyTrend = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        
+        const [rows] = await pool.execute(
+            `SELECT 
+                DATE_FORMAT(expense_date, '%Y-%m') as month,
+                SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND expense_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
+            ORDER BY month`,
+            [userId]
+        );
+
+        res.json({
+            success: true,
+            data: rows
+        });
+    } catch (error) {
+        console.error('Get monthly trend error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
+// Get weekly trend
+const getWeeklyTrend = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        
+        const [rows] = await pool.execute(
+            `SELECT 
+                YEARWEEK(expense_date) as week,
+                DATE_FORMAT(MIN(expense_date), '%b %d') as week_start,
+                DATE_FORMAT(MAX(expense_date), '%b %d') as week_end,
+                SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND expense_date >= DATE_SUB(NOW(), INTERVAL 28 DAY)
+            GROUP BY YEARWEEK(expense_date)
+            ORDER BY week DESC
+            LIMIT 4`,
+            [userId]
+        );
+
+        res.json({
+            success: true,
+            data: rows
+        });
+    } catch (error) {
+        console.error('Get weekly trend error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
 };
 
 // Upload receipt
@@ -343,6 +472,9 @@ module.exports = {
     getStats,
     getRecentExpenses,
     getCategoryBreakdown,
+    getDashboardStats,
+    getMonthlyTrend,
+    getWeeklyTrend,
     uploadReceipt,
     getBudgetVsActual
 };

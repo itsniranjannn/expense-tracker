@@ -10,7 +10,10 @@ const {
     getRecentExpenses,
     getCategoryBreakdown,
     uploadReceipt,
-    getBudgetVsActual
+    getBudgetVsActual,
+    getDashboardStats,           // Add this
+    getMonthlyTrend,             // Add this
+    getWeeklyTrend              // Add this
 } = require('../controllers/expenseController');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -27,6 +30,11 @@ router.get('/budget-vs-actual', getBudgetVsActual);
 router.get('/:id', getExpense);
 router.put('/:id', updateExpense);
 router.delete('/:id', deleteExpense);
+
+// Dashboard endpoints
+router.get('/dashboard-stats', getDashboardStats);      // Add this
+router.get('/monthly-trend', getMonthlyTrend);          // Add this
+router.get('/weekly-trend', getWeeklyTrend);           // Add this
 
 // File upload
 router.post('/upload-receipt', uploadReceipt);

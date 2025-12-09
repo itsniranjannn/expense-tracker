@@ -182,6 +182,126 @@ class Expense {
         );
         return rows;
     }
+
+    // Get dashboard statistics
+    static async getDashboardStats(userId, month = null, year = null) {
+        const currentDate = new Date();
+        const currentMonth = currentDate.getMonth() + 1;
+        const currentYear = currentDate.getFullYear();
+        
+        const monthParam = month || currentMonth;
+        const yearParam = year || currentYear;
+
+        // Total expenses this month
+        const [totalResult] = await pool.execute(
+            `SELECT COUNT(*) as count, SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND MONTH(expense_date) = ? 
+            AND YEAR(expense_date) = ?`,
+            [userId, monthParam, yearParam]
+        );
+
+        // Total categories used
+        const [categoryResult] = await pool.execute(
+            `SELECT COUNT(DISTINCT category) as count 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND MONTH(expense_date) = ? 
+            AND YEAR(expense_date) = ?`,
+            [userId, monthParam, yearParam]
+        );
+
+        // Highest spending category
+        const [highestCategoryResult] = await pool.execute(
+            `SELECT category, SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND MONTH(expense_date) = ? 
+            AND YEAR(expense_date) = ? 
+            GROUP BY category 
+            ORDER BY total DESC 
+            LIMIT 1`,
+            [userId, monthParam, yearParam]
+        );
+
+        // Average daily spending this month
+        const [dailyAvgResult] = await pool.execute(
+            `SELECT AVG(daily_total) as avg_daily 
+            FROM (
+                SELECT expense_date, SUM(amount) as daily_total 
+                FROM expenses 
+                WHERE user_id = ? 
+                AND MONTH(expense_date) = ? 
+                AND YEAR(expense_date) = ? 
+                GROUP BY expense_date
+            ) as daily_totals`,
+            [userId, monthParam, yearParam]
+        );
+
+        // Monthly spending trend (last 6 months)
+        const [monthlyTrendResult] = await pool.execute(
+            `SELECT 
+                DATE_FORMAT(expense_date, '%Y-%m') as month,
+                SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND expense_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
+            ORDER BY month`,
+            [userId]
+        );
+
+        // Weekly trend (last 4 weeks)
+        const [weeklyTrendResult] = await pool.execute(
+            `SELECT 
+                YEARWEEK(expense_date) as week,
+                DATE_FORMAT(MIN(expense_date), '%b %d') as week_start,
+                DATE_FORMAT(MAX(expense_date), '%b %d') as week_end,
+                SUM(amount) as total 
+            FROM expenses 
+            WHERE user_id = ? 
+            AND expense_date >= DATE_SUB(NOW(), INTERVAL 28 DAY)
+            GROUP BY YEARWEEK(expense_date)
+            ORDER BY week DESC
+            LIMIT 4`,
+            [userId]
+        );
+
+        return {
+            totalExpenses: parseInt(totalResult[0]?.count || 0),
+            totalAmount: parseFloat(totalResult[0]?.total || 0),
+            totalCategories: parseInt(categoryResult[0]?.count || 0),
+            highestCategory: highestCategoryResult[0] || null,
+            averageDailySpending: parseFloat(dailyAvgResult[0]?.avg_daily || 0),
+            monthlyTrend: monthlyTrendResult,
+            weeklyTrend: weeklyTrendResult
+        };
+    }
+
+    // Get category distribution for pie chart
+    static async getCategoryDistribution(userId, month = null, year = null) {
+        const currentDate = new Date();
+        const monthParam = month || currentDate.getMonth() + 1;
+        const yearParam = year || currentDate.getFullYear();
+
+        const [rows] = await pool.execute(
+            `SELECT 
+                category,
+                COUNT(*) as count,
+                SUM(amount) as total,
+                ROUND((SUM(amount) / (SELECT SUM(amount) FROM expenses WHERE user_id = ? AND MONTH(expense_date) = ? AND YEAR(expense_date) = ?)) * 100, 2) as percentage
+            FROM expenses 
+            WHERE user_id = ? 
+            AND MONTH(expense_date) = ? 
+            AND YEAR(expense_date) = ?
+            GROUP BY category 
+            ORDER BY total DESC`,
+            [userId, monthParam, yearParam, userId, monthParam, yearParam]
+        );
+
+        return rows;
+    }
 }
 
 module.exports = Expense;

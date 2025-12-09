@@ -36,11 +36,9 @@ const QuickAddExpense = ({ onExpenseAdded }) => {
 
   const paymentMethods = [
     'Cash',
-    'Credit Card',
-    'Debit Card',
-    'Digital Wallet',
-    'Bank Transfer',
-    'UPI',
+    'Card',
+    'Esewa',
+    'Khalti',
     'Other'
   ];
 
@@ -149,7 +147,7 @@ const QuickAddExpense = ({ onExpenseAdded }) => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Amount (₹) *
+                      Amount (Rs) *
                     </label>
                     <input
                       type="number"

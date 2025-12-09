@@ -128,7 +128,7 @@ const Expenses = () => {
         
         <div className="card bg-gradient-to-r from-green-50 to-green-100">
           <h3 className="text-gray-600 text-sm font-medium">Total Spent</h3>
-          <p className="text-2xl font-bold text-gray-800">₹{totalAmount.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-gray-800">Rs{totalAmount.toLocaleString()}</p>
         </div>
         
         <div className="card bg-gradient-to-r from-purple-50 to-purple-100">
@@ -139,7 +139,7 @@ const Expenses = () => {
         <div className="card bg-gradient-to-r from-orange-50 to-orange-100">
           <h3 className="text-gray-600 text-sm font-medium">Avg per Expense</h3>
           <p className="text-2xl font-bold text-gray-800">
-            ₹{expenses.length > 0 ? Math.round(totalAmount / expenses.length) : 0}
+            Rs{expenses.length > 0 ? Math.round(totalAmount / expenses.length) : 0}
           </p>
         </div>
       </div>
@@ -181,7 +181,7 @@ const Expenses = () => {
             </div>
             
             <div>
-              <label className="block text-gray-700 mb-2">Amount (₹) *</label>
+              <label className="block text-gray-700 mb-2">Amount (Rs) *</label>
               <input
                 type="number"
                 value={newExpense.amount}
@@ -311,7 +311,7 @@ const Expenses = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-semibold text-gray-900">
-                        ₹{expense.amount.toLocaleString()}
+                        Rs{expense.amount.toLocaleString()}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">
@@ -360,7 +360,7 @@ const Expenses = () => {
               <div key={category} className="card">
                 <h3 className="font-medium text-gray-700 mb-2">{category}</h3>
                 <p className="text-2xl font-bold text-gray-800 mb-1">
-                  ₹{categoryTotal.toLocaleString()}
+                  Rs{categoryTotal.toLocaleString()}
                 </p>
                 <p className="text-sm text-gray-500">
                   {categoryExpenses.length} expenses • {percentage}%

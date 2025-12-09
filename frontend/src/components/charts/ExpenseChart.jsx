@@ -62,10 +62,10 @@ const ExpenseChart = ({ data }) => {
             />
             <YAxis 
               stroke="#666"
-              tickFormatter={(value) => `₹${value}`}
+              tickFormatter={(value) => `Rs${value}`}
             />
             <Tooltip
-              formatter={(value) => [`₹${value}`, 'Amount']}
+              formatter={(value) => [`Rs${value}`, 'Amount']}
               labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
             />
             <Legend />

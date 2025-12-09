@@ -79,7 +79,7 @@ const CategoryDistribution = ({ data }) => {
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ category, amount }) => `${category}: ₹${amount.toLocaleString()}`}
+              label={({ category, amount }) => `${category}: Rs${amount.toLocaleString()}`}
               outerRadius={80}
               fill="#8884d8"
               dataKey="amount"
@@ -90,7 +90,7 @@ const CategoryDistribution = ({ data }) => {
               ))}
             </Pie>
             <Tooltip
-              formatter={(value) => [`₹${parseFloat(value).toLocaleString()}`, 'Amount']}
+              formatter={(value) => [`Rs${parseFloat(value).toLocaleString()}`, 'Amount']}
             />
             <Legend />
           </PieChart>
@@ -110,7 +110,7 @@ const CategoryDistribution = ({ data }) => {
               </span>
             </div>
             <span className="text-sm font-semibold text-gray-900">
-              ₹{(parseFloat(item.amount) || 0).toLocaleString()}
+              Rs{(parseFloat(item.amount) || 0).toLocaleString()}
             </span>
           </div>
         ))}

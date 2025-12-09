@@ -8,8 +8,12 @@ const runClustering = async (req, res) => {
         const userId = req.user.userId;
         const { k } = req.body;
 
+        console.log(`Running K-Means clustering for user ${userId}`);
+
         // Get user's expenses
         const expenses = await Expense.findAll(userId);
+        
+        console.log(`Found ${expenses.length} expenses for clustering`);
         
         if (expenses.length < 3) {
             return res.status(400).json({
@@ -18,19 +22,40 @@ const runClustering = async (req, res) => {
             });
         }
 
+        // Prepare data for K-Means
+        const preparedExpenses = expenses.map(exp => ({
+            id: exp.id,
+            amount: parseFloat(exp.amount) || 0,
+            category: exp.category,
+            title: exp.title,
+            expense_date: exp.expense_date,
+            // Convert date to numeric value (days since first expense)
+            dateValue: new Date(exp.expense_date).getTime()
+        }));
+
         // Find optimal K if not provided
         let optimalK = parseInt(k) || 3;
         if (!k) {
-            const optimalResult = KMeans.findOptimalK(expenses);
-            optimalK = optimalResult.recommendations;
+            try {
+                const optimalResult = KMeans.findOptimalK(preparedExpenses);
+                optimalK = optimalResult.recommendations || 3;
+                console.log(`Optimal K determined: ${optimalK}`);
+            } catch (optimalError) {
+                console.log('Using default K=3 due to optimal K calculation error:', optimalError.message);
+                optimalK = 3;
+            }
         }
 
+        console.log(`Running K-Means with k=${optimalK}`);
+        
         // Run K-Means
         const kmeans = new KMeans(optimalK);
-        const result = kmeans.fit(expenses);
+        const result = kmeans.fit(preparedExpenses);
+        
+        console.log(`Clustering completed with ${result.clusters.length} clusters`);
         
         // Generate insights
-        const insights = kmeans.generateInsights(expenses, result.clusters);
+        const insights = kmeans.generateInsights(preparedExpenses, result.clusters);
         
         // Save analysis results to database
         const [analysisResult] = await pool.execute(
@@ -42,19 +67,28 @@ const runClustering = async (req, res) => {
         
         const analysisId = analysisResult.insertId;
         
+        console.log(`Analysis saved with ID: ${analysisId}`);
+        
         // Save cluster assignments
+        const clusterPromises = [];
         for (let clusterId = 0; clusterId < result.clusters.length; clusterId++) {
             const cluster = result.clusters[clusterId];
             
             for (const point of cluster) {
-                await pool.execute(
-                    `INSERT INTO expense_clusters 
-                    (analysis_id, expense_id, cluster_id, distance_to_center) 
-                    VALUES (?, ?, ?, ?)`,
-                    [analysisId, point.id, clusterId + 1, point.distance || 0]
+                clusterPromises.push(
+                    pool.execute(
+                        `INSERT INTO expense_clusters 
+                        (analysis_id, expense_id, cluster_id, distance_to_center) 
+                        VALUES (?, ?, ?, ?)`,
+                        [analysisId, point.id, clusterId + 1, point.distance || 0]
+                    )
                 );
             }
         }
+        
+        await Promise.all(clusterPromises);
+        
+        console.log('Cluster assignments saved to database');
 
         res.json({
             success: true,
@@ -62,14 +96,20 @@ const runClustering = async (req, res) => {
             optimalK,
             clusters: result.clusters.length,
             insights,
-            centroids: result.centroids,
-            iterationHistory: result.history
+            centroids: result.centroids.map(c => ({
+                amount: c.amount,
+                normalizedAmount: c.normalizedAmount,
+                days_since_start: c.days_since_start
+            })),
+            iterationHistory: result.history.length
         });
     } catch (error) {
-        console.error('Clustering error:', error);
+        console.error('Clustering error details:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).json({
             success: false,
-            message: 'Server error during clustering'
+            message: 'Server error during clustering',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };

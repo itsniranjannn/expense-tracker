@@ -1,480 +1,460 @@
 const Expense = require('../models/Expense');
-const Budget = require('../models/Budget');
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { pool } = require('../config/database');
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadPath = 'uploads/receipts';
-        if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
-        }
-        cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'receipt-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
+// Get all expenses for a user
+const getAllExpenses = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { 
+      startDate, 
+      endDate, 
+      category, 
+      minAmount, 
+      maxAmount,
+      sortBy = 'expense_date',
+      sortOrder = 'desc',
+      limit
+    } = req.query;
 
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|pdf/;
-        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
-        
-        if (mimetype && extname) {
-            return cb(null, true);
-        } else {
-            cb(new Error('Only images and PDFs are allowed'));
-        }
-    }
-}).single('receipt_image');
+    const filters = {};
+    
+    // Apply filters
+    if (startDate) filters.startDate = startDate;
+    if (endDate) filters.endDate = endDate;
+    if (category && category !== 'all') filters.category = category;
+    if (minAmount) filters.minAmount = parseFloat(minAmount);
+    if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+    if (sortBy) filters.sortBy = sortBy;
+    if (sortOrder) filters.sortOrder = sortOrder.toUpperCase();
+    if (limit) filters.limit = parseInt(limit);
 
-// Create new expense
-const createExpense = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const {
-            title,
-            category,
-            amount,
-            expense_date,
-            description,
-            payment_method,
-            is_recurring,
-            recurring_frequency
-        } = req.body;
+    const expenses = await Expense.findAllByUser(userId, filters);
 
-        // Validation
-        if (!title || !category || !amount || !expense_date) {
-            return res.status(400).json({
-                success: false,
-                message: 'Please provide all required fields'
-            });
-        }
+    // Calculate summary
+    const totalAmount = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+    const categorySummary = expenses.reduce((acc, exp) => {
+      acc[exp.category] = (acc[exp.category] || 0) + parseFloat(exp.amount);
+      return acc;
+    }, {});
 
-        const expenseId = await Expense.create({
-            user_id: userId,
-            title,
-            category,
-            amount: parseFloat(amount),
-            expense_date,
-            description,
-            payment_method: payment_method || 'Cash',
-            receipt_image: req.file ? `/uploads/receipts/${req.file.filename}` : null,
-            is_recurring: is_recurring === 'true' || is_recurring === true,
-            recurring_frequency: is_recurring ? (recurring_frequency || 'Monthly') : null
-        });
-
-        // Emit real-time update
-        if (req.io) {
-            req.io.to(`user_${userId}`).emit('expenseAdded', {
-                id: expenseId,
-                title,
-                amount,
-                category,
-                date: expense_date
-            });
-        }
-
-        res.status(201).json({
-            success: true,
-            message: 'Expense added successfully',
-            expenseId
-        });
-    } catch (error) {
-        console.error('Create expense error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Get all expenses
-const getExpenses = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const filters = req.query;
-        
-        const expenses = await Expense.findAll(userId, {
-            startDate: filters.startDate,
-            endDate: filters.endDate,
-            category: filters.category
-        });
-
-        res.json({
-            success: true,
-            count: expenses.length,
-            expenses
-        });
-    } catch (error) {
-        console.error('Get expenses error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Get single expense
-const getExpense = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const expenseId = req.params.id;
-
-        const expense = await Expense.findById(expenseId, userId);
-        
-        if (!expense) {
-            return res.status(404).json({
-                success: false,
-                message: 'Expense not found'
-            });
-        }
-
-        res.json({
-            success: true,
-            expense
-        });
-    } catch (error) {
-        console.error('Get expense error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Update expense
-const updateExpense = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const expenseId = req.params.id;
-        const updateData = req.body;
-
-        if (req.file) {
-            updateData.receipt_image = `/uploads/receipts/${req.file.filename}`;
-        }
-
-        const updated = await Expense.update(expenseId, userId, updateData);
-        
-        if (!updated) {
-            return res.status(404).json({
-                success: false,
-                message: 'Expense not found or update failed'
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Expense updated successfully'
-        });
-    } catch (error) {
-        console.error('Update expense error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Delete expense
-const deleteExpense = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const expenseId = req.params.id;
-
-        const deleted = await Expense.delete(expenseId, userId);
-        
-        if (!deleted) {
-            return res.status(404).json({
-                success: false,
-                message: 'Expense not found'
-            });
-        }
-
-        // Emit real-time update
-        if (req.io) {
-            req.io.to(`user_${userId}`).emit('expenseDeleted', { expenseId });
-        }
-
-        res.json({
-            success: true,
-            message: 'Expense deleted successfully'
-        });
-    } catch (error) {
-        console.error('Delete expense error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Get expense statistics
-const getStats = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const { startDate, endDate } = req.query;
-
-        const stats = await Expense.getStats(userId, startDate, endDate);
-        
-        res.json({
-            success: true,
-            stats
-        });
-    } catch (error) {
-        console.error('Get stats error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
+    res.json({
+      success: true,
+      count: expenses.length,
+      totalAmount,
+      categorySummary,
+      expenses: expenses.map(exp => ({
+        id: exp.id,
+        title: exp.title,
+        category: exp.category,
+        amount: parseFloat(exp.amount),
+        expense_date: exp.expense_date,
+        description: exp.description,
+        payment_method: exp.payment_method,
+        receipt_image: exp.receipt_image,
+        is_recurring: Boolean(exp.is_recurring),
+        recurring_frequency: exp.recurring_frequency,
+        created_at: exp.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Get expenses error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching expenses'
+    });
+  }
 };
 
 // Get recent expenses
 const getRecentExpenses = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const limit = parseInt(req.query.limit) || 10;
+  try {
+    const userId = req.user.userId;
+    const limit = parseInt(req.query.limit) || 10;
 
-        const expenses = await Expense.getRecent(userId, limit);
-        
-        res.json({
-            success: true,
-            expenses
-        });
-    } catch (error) {
-        console.error('Get recent expenses error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
+    const expenses = await Expense.getRecent(userId, limit);
+
+    res.json({
+      success: true,
+      expenses: expenses.map(exp => ({
+        id: exp.id,
+        title: exp.title,
+        category: exp.category,
+        amount: parseFloat(exp.amount),
+        expense_date: exp.expense_date,
+        description: exp.description,
+        payment_method: exp.payment_method,
+        created_at: exp.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Get recent expenses error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching recent expenses'
+    });
+  }
 };
 
-// Get expenses by category
-const getCategoryBreakdown = async (req, res) => {
-    try {
-        const userId = req.user.userId;
+// Get single expense
+const getExpenseById = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const expenseId = req.params.id;
 
-        const breakdown = await Expense.getByCategory(userId);
-        
-        res.json({
-            success: true,
-            breakdown
-        });
-    } catch (error) {
-        console.error('Get category breakdown error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+    const expense = await Expense.findByIdAndUser(expenseId, userId);
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found'
+      });
     }
+
+    res.json({
+      success: true,
+      expense: {
+        id: expense.id,
+        title: expense.title,
+        category: expense.category,
+        amount: parseFloat(expense.amount),
+        expense_date: expense.expense_date,
+        description: expense.description,
+        payment_method: expense.payment_method,
+        receipt_image: expense.receipt_image,
+        is_recurring: Boolean(expense.is_recurring),
+        recurring_frequency: expense.recurring_frequency,
+        created_at: expense.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Get expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching expense'
+    });
+  }
+};
+
+
+// Update expense
+const updateExpense = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const expenseId = req.params.id;
+    const updateData = req.body;
+
+    // Parse amount if present
+    if (updateData.amount) {
+      updateData.amount = parseFloat(updateData.amount);
+    }
+
+    // Parse boolean values
+    if (updateData.is_recurring !== undefined) {
+      updateData.is_recurring = updateData.is_recurring === 'true' || updateData.is_recurring === true;
+    }
+
+    // Update expense
+    const updated = await Expense.update(expenseId, userId, updateData);
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found'
+      });
+    }
+
+    // Get the updated expense
+    const expense = await Expense.findByIdAndUser(expenseId, userId);
+
+    res.json({
+      success: true,
+      message: 'Expense updated successfully',
+      expense: {
+        id: expense.id,
+        title: expense.title,
+        category: expense.category,
+        amount: parseFloat(expense.amount),
+        expense_date: expense.expense_date,
+        description: expense.description,
+        payment_method: expense.payment_method
+      }
+    });
+  } catch (error) {
+    console.error('Update expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating expense'
+    });
+  }
+};
+
+// Delete expense
+const deleteExpense = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const expenseId = req.params.id;
+
+    // Get expense first to check for receipt
+    const expense = await Expense.findByIdAndUser(expenseId, userId);
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found'
+      });
+    }
+
+    // Delete receipt image if exists
+    if (expense.receipt_image) {
+      const receiptPath = path.join(__dirname, '..', expense.receipt_image);
+      if (fs.existsSync(receiptPath)) {
+        fs.unlinkSync(receiptPath);
+      }
+    }
+
+    // Delete expense from database
+    const deleted = await Expense.delete(expenseId, userId);
+
+    if (!deleted) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete expense'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Expense deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting expense'
+    });
+  }
+};
+
+// Get expense statistics
+const getStatistics = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get all expenses
+    const expenses = await Expense.findAllByUser(userId);
+    
+    // Get current month expenses
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const currentMonthExpenses = await Expense.getByMonth(userId, currentYear, currentMonth);
+
+    // Calculate statistics
+    const totalExpenses = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+    const monthlyExpenses = currentMonthExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+    const averageExpense = expenses.length > 0 ? totalExpenses / expenses.length : 0;
+    const highestExpense = expenses.length > 0 ? Math.max(...expenses.map(exp => parseFloat(exp.amount))) : 0;
+
+    // Get category distribution
+    const categoryDistribution = expenses.reduce((acc, exp) => {
+      acc[exp.category] = (acc[exp.category] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Get monthly trend (last 6 months)
+    const monthlyStats = await Expense.getStatistics(userId);
+    
+    // Format monthly trend
+    const monthlyTrend = monthlyStats.reduce((acc, stat) => {
+      acc.push({
+        month: stat.month,
+        total: parseFloat(stat.total || 0),
+        count: parseInt(stat.count || 0)
+      });
+      return acc;
+    }, []).slice(0, 6).reverse(); // Last 6 months, oldest first
+
+    res.json({
+      success: true,
+      statistics: {
+        totalExpenses,
+        monthlyExpenses,
+        averageExpense,
+        highestExpense,
+        totalCount: expenses.length,
+        categoryDistribution,
+        monthlyTrend
+      }
+    });
+  } catch (error) {
+    console.error('Get statistics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching statistics'
+    });
+  }
+};
+
+// Get category breakdown
+const getCategoryBreakdown = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const breakdown = await Expense.getCategoryBreakdown(userId);
+
+    res.json({
+      success: true,
+      breakdown: breakdown.map(item => ({
+        category: item.category,
+        total: parseFloat(item.total || 0),
+        count: parseInt(item.count || 0),
+        average: parseFloat(item.average || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Get category breakdown error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching category breakdown'
+    });
+  }
 };
 
 // Get dashboard statistics
 const getDashboardStats = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        
-        // Get total expenses and amount
-        const [totalResult] = await pool.execute(
-            `SELECT COUNT(*) as count, SUM(amount) as total 
-            FROM expenses 
-            WHERE user_id = ?`,
-            [userId]
-        );
+  try {
+    const userId = req.user.userId;
+    
+    const stats = await Expense.getDashboardStats(userId);
 
-        // Get total categories
-        const [categoryResult] = await pool.execute(
-            `SELECT COUNT(DISTINCT category) as count 
-            FROM expenses 
-            WHERE user_id = ?`,
-            [userId]
-        );
+    // Calculate percentage change
+    const percentageChange = stats.lastMonthTotal > 0 
+      ? ((stats.currentMonthTotal - stats.lastMonthTotal) / stats.lastMonthTotal * 100)
+      : 0;
 
-        // Get highest spending category
-        const [highestCategoryResult] = await pool.execute(
-            `SELECT category, SUM(amount) as total 
-            FROM expenses 
-            WHERE user_id = ? 
-            GROUP BY category 
-            ORDER BY total DESC 
-            LIMIT 1`,
-            [userId]
-        );
+    // Format top categories
+    const topCategories = stats.topCategories.map(cat => ({
+      category: cat.category,
+      total: parseFloat(cat.total || 0)
+    }));
 
-        // Get recent expenses
-        const [recentExpenses] = await pool.execute(
-            `SELECT * FROM expenses 
-            WHERE user_id = ? 
-            ORDER BY expense_date DESC 
-            LIMIT 5`,
-            [userId]
-        );
+    // Format recent expenses
+    const recentExpenses = stats.recentExpenses.map(exp => ({
+      id: exp.id,
+      title: exp.title,
+      category: exp.category,
+      amount: parseFloat(exp.amount),
+      expense_date: exp.expense_date,
+      payment_method: exp.payment_method
+    }));
 
-        // Get category distribution
-        const [categoryDistribution] = await pool.execute(
-            `SELECT category, SUM(amount) as total 
-            FROM expenses 
-            WHERE user_id = ? 
-            GROUP BY category`,
-            [userId]
-        );
+    // Get total count of all expenses
+    const allExpenses = await Expense.findAllByUser(userId);
+    
+    // Get category breakdown for total categories count
+    const categoryBreakdown = await Expense.getCategoryBreakdown(userId);
 
-        res.json({
-            success: true,
-            data: {
-                stats: {
-                    totalExpenses: parseInt(totalResult[0]?.count || 0),
-                    totalAmount: parseFloat(totalResult[0]?.total || 0),
-                    totalCategories: parseInt(categoryResult[0]?.count || 0),
-                    highestCategory: highestCategoryResult[0] || { category: 'None', total: 0 },
-                    averageDailySpending: 0
-                },
-                recentExpenses,
-                categoryDistribution
-            }
-        });
-    } catch (error) {
-        console.error('Get dashboard stats error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Get monthly trend
-const getMonthlyTrend = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        
-        const [rows] = await pool.execute(
-            `SELECT 
-                DATE_FORMAT(expense_date, '%Y-%m') as month,
-                SUM(amount) as total 
-            FROM expenses 
-            WHERE user_id = ? 
-            AND expense_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-            GROUP BY DATE_FORMAT(expense_date, '%Y-%m')
-            ORDER BY month`,
-            [userId]
-        );
-
-        res.json({
-            success: true,
-            data: rows
-        });
-    } catch (error) {
-        console.error('Get monthly trend error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Get weekly trend
-const getWeeklyTrend = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        
-        const [rows] = await pool.execute(
-            `SELECT 
-                YEARWEEK(expense_date) as week,
-                DATE_FORMAT(MIN(expense_date), '%b %d') as week_start,
-                DATE_FORMAT(MAX(expense_date), '%b %d') as week_end,
-                SUM(amount) as total 
-            FROM expenses 
-            WHERE user_id = ? 
-            AND expense_date >= DATE_SUB(NOW(), INTERVAL 28 DAY)
-            GROUP BY YEARWEEK(expense_date)
-            ORDER BY week DESC
-            LIMIT 4`,
-            [userId]
-        );
-
-        res.json({
-            success: true,
-            data: rows
-        });
-    } catch (error) {
-        console.error('Get weekly trend error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-};
-
-// Upload receipt
-const uploadReceipt = async (req, res) => {
-    upload(req, res, (err) => {
-        if (err) {
-            return res.status(400).json({
-                success: false,
-                message: err.message
-            });
-        }
-
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'No file uploaded'
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Receipt uploaded successfully',
-            filePath: `/uploads/receipts/${req.file.filename}`
-        });
+    res.json({
+      success: true,
+      totalCurrentMonth: parseFloat(stats.currentMonthTotal || 0),
+      totalLastMonth: parseFloat(stats.lastMonthTotal || 0),
+      percentageChange: parseFloat(percentageChange.toFixed(2)),
+      topCategories,
+      recentExpenses,
+      expenseCount: allExpenses.length,
+      totalCategories: categoryBreakdown.length,
+      highestExpense: Math.max(...allExpenses.map(e => parseFloat(e.amount))),
+      averageExpense: allExpenses.length > 0 
+        ? allExpenses.reduce((sum, e) => sum + parseFloat(e.amount), 0) / allExpenses.length 
+        : 0
     });
+  } catch (error) {
+    console.error('Get dashboard stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching dashboard statistics'
+    });
+  }
 };
+const createExpense = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    // Handle both JSON and FormData
+    let {
+      title,
+      category,
+      amount,
+      expense_date,
+      description,
+      payment_method,
+      is_recurring,
+      recurring_frequency
+    } = req.body;
 
-// Get budget vs actual
-const getBudgetVsActual = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const { month } = req.query;
-        
-        const month_year = month || new Date().toISOString().slice(0, 7) + '-01';
-        const comparison = await Budget.getBudgetVsActual(userId, month_year);
-        
-        res.json({
-            success: true,
-            month_year,
-            comparison
-        });
-    } catch (error) {
-        console.error('Get budget vs actual error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
+    // Parse amount
+    amount = parseFloat(amount);
+    
+    // Handle file upload
+    let receipt_image = null;
+    if (req.file) {
+      receipt_image = `/uploads/receipts/${req.file.filename}`;
     }
-};
 
+    // Parse boolean values
+    const isRecurring = is_recurring === 'true' || is_recurring === true;
+
+    // Create expense
+    const expenseId = await Expense.create({
+      user_id: userId,
+      title,
+      category,
+      amount,
+      expense_date,
+      description: description || '',
+      payment_method: payment_method || 'Cash',
+      is_recurring: isRecurring,
+      recurring_frequency: isRecurring ? (recurring_frequency || 'Monthly') : null,
+      receipt_image
+    });
+
+    // Get the created expense
+    const expense = await Expense.findByIdAndUser(expenseId, userId);
+
+    res.status(201).json({
+      success: true,
+      message: 'Expense created successfully',
+      expense: {
+        id: expense.id,
+        title: expense.title,
+        category: expense.category,
+        amount: expense.amount,
+        expense_date: expense.expense_date,
+        description: expense.description,
+        payment_method: expense.payment_method,
+        is_recurring: Boolean(expense.is_recurring),
+        recurring_frequency: expense.recurring_frequency,
+        receipt_image: expense.receipt_image,
+        created_at: expense.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Create expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating expense'
+    });
+  }
+};
 module.exports = {
-    createExpense,
-    getExpenses,
-    getExpense,
-    updateExpense,
-    deleteExpense,
-    getStats,
-    getRecentExpenses,
-    getCategoryBreakdown,
-    getDashboardStats,
-    getMonthlyTrend,
-    getWeeklyTrend,
-    uploadReceipt,
-    getBudgetVsActual
+  getAllExpenses,
+  getRecentExpenses,
+  getExpenseById,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  getStatistics,
+  getCategoryBreakdown,
+  getDashboardStats
 };

@@ -1,95 +1,74 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import { authService } from '../services/authService';
-import { toast } from 'react-hot-toast';
 
-const AuthContext = createContext();
+const AuthContext = createContext({});
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(localStorage.getItem('token'));
 
   useEffect(() => {
-    // Check if user is logged in on mount
-    const token = authService.getToken();
-    if (token) {
-      const currentUser = authService.getCurrentUser();
-      setUser(currentUser);
-      
-      // Verify token is still valid
-      authService.getProfile()
-        .catch(() => {
-          authService.logout();
-          setUser(null);
-        });
-    }
-    setLoading(false);
-  }, []);
+    const initAuth = async () => {
+      if (token) {
+        try {
+          const userData = await authService.getProfile();
+          setUser(userData.user);
+        } catch (error) {
+          console.error('Failed to fetch profile:', error);
+          localStorage.removeItem('token');
+          setToken(null);
+        }
+      }
+      setLoading(false);
+    };
+
+    initAuth();
+  }, [token]);
 
   const login = async (email, password) => {
-    try {
-      const result = await authService.login({ email, password });
-      if (result.success) {
-        setUser(result.user);
-        toast.success('Login successful!');
-        return { success: true };
-      }
-      return { success: false, message: result.message };
-    } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Login failed' };
-    }
+    const response = await authService.login(email, password);
+    const { token, user } = response;
+    
+    localStorage.setItem('token', token);
+    setToken(token);
+    setUser(user);
+    return response;
   };
 
   const register = async (name, email, password) => {
-    try {
-      const result = await authService.register({ name, email, password });
-      if (result.success) {
-        setUser(result.user);
-        toast.success('Registration successful!');
-        return { success: true };
-      }
-      return { success: false, message: result.message };
-    } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Registration failed' };
-    }
+    const response = await authService.register(name, email, password);
+    const { token, user } = response;
+    
+    localStorage.setItem('token', token);
+    setToken(token);
+    setUser(user);
+    return response;
   };
 
   const logout = () => {
-    authService.logout();
+    localStorage.removeItem('token');
+    setToken(null);
     setUser(null);
-    toast.success('Logged out successfully');
   };
 
   const updateProfile = async (profileData) => {
-    try {
-      const result = await authService.updateProfile(profileData);
-      if (result.success) {
-        setUser(result.user);
-        localStorage.setItem('user', JSON.stringify(result.user));
-        toast.success('Profile updated successfully!');
-        return { success: true };
-      }
-      return { success: false, message: result.message };
-    } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Update failed' };
-    }
+    const response = await authService.updateProfile(profileData);
+    setUser(response.user);
+    return response;
   };
 
   const value = {
     user,
+    token,
     loading,
     login,
     register,
     logout,
     updateProfile,
-    isAuthenticated: !!user
+    isAuthenticated: !!token
   };
 
   return (

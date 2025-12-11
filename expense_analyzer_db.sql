@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Dec 10, 2025 at 11:27 AM
+-- Generation Time: Dec 10, 2025 at 02:41 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -21,6 +21,69 @@ SET time_zone = "+00:00";
 -- Database: `expense_analyzer_db`
 --
 
+DELIMITER $$
+--
+-- Procedures
+--
+CREATE DEFINER=`root`@`localhost` PROCEDURE `generate_sample_analysis` (IN `user_id` INT)   BEGIN
+    DECLARE analysis_id INT;
+    
+    -- Create analysis record
+    INSERT INTO analysis_results (user_id, cluster_count, algorithm_version, insights_json, status)
+    VALUES (
+        user_id, 
+        4, 
+        'kmeans-v2',
+        JSON_OBJECT(
+            'summary', JSON_OBJECT(
+                'totalClusters', 4,
+                'totalExpenses', 15,
+                'analysisDate', NOW()
+            ),
+            'clusters', JSON_OBJECT(
+                '1', JSON_OBJECT('label', 'Daily Essentials', 'size', 5, 'totalAmount', 4500),
+                '2', JSON_OBJECT('label', 'High-Value Purchases', 'size', 3, 'totalAmount', 7500),
+                '3', JSON_OBJECT('label', 'Entertainment', 'size', 4, 'totalAmount', 3100),
+                '4', JSON_OBJECT('label', 'Utilities', 'size', 3, 'totalAmount', 2500)
+            ),
+            'patterns', JSON_ARRAY(
+                JSON_OBJECT('pattern', 'Weekend spending spike', 'confidence', '85%', 'impact', 'High'),
+                JSON_OBJECT('pattern', 'Food & Dining frequency', 'confidence', '78%', 'impact', 'Medium')
+            ),
+            'recommendations', JSON_ARRAY(
+                JSON_OBJECT('title', 'Reduce Food Delivery', 'description', 'Spending Rs 3,250 monthly on food delivery', 'impact', 'High'),
+                JSON_OBJECT('title', 'Bundle Subscriptions', 'description', 'Multiple entertainment subscriptions found', 'impact', 'Medium')
+            )
+        ),
+        'completed'
+    );
+    
+    SET analysis_id = LAST_INSERT_ID();
+    
+    -- Assign clusters to expenses
+    INSERT INTO expense_clusters (analysis_id, expense_id, cluster_id, cluster_label, distance_to_center)
+    SELECT analysis_id, id, 
+           CASE 
+               WHEN category IN ('Food & Dining', 'Groceries') THEN 1
+               WHEN amount > 2000 THEN 2
+               WHEN category IN ('Entertainment', 'Personal Care') THEN 3
+               ELSE 4
+           END,
+           CASE 
+               WHEN category IN ('Food & Dining', 'Groceries') THEN 'Daily Essentials'
+               WHEN amount > 2000 THEN 'High-Value Purchases'
+               WHEN category IN ('Entertainment', 'Personal Care') THEN 'Entertainment'
+               ELSE 'Utilities'
+           END,
+           ROUND(RAND() * 10, 4)
+    FROM expenses 
+    WHERE user_id = user_id;
+    
+    SELECT analysis_id;
+END$$
+
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
@@ -35,15 +98,6 @@ CREATE TABLE `analysis_results` (
   `algorithm_version` varchar(50) DEFAULT 'kmeans-v1',
   `insights_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`insights_json`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `analysis_results`
---
-
-INSERT INTO `analysis_results` (`id`, `user_id`, `analysis_date`, `cluster_count`, `algorithm_version`, `insights_json`) VALUES
-(1, 1, '2025-12-07 13:01:59', 3, 'kmeans-v1', '{\"totalClusters\":3,\"clusterDetails\":[{\"clusterId\":1,\"size\":7,\"averageAmount\":null,\"totalAmount\":\"01200.001800.00299.00800.00600.001500.001200.00\",\"minAmount\":299,\"maxAmount\":1800,\"mostCommonCategory\":\"Food & Dining\",\"categoryDistribution\":{\"Education\":1,\"Food & Dining\":2,\"Bills & Utilities\":1,\"Healthcare\":1,\"Entertainment\":1,\"Transportation\":1},\"examples\":[{\"title\":\"Books\",\"amount\":\"1200.00\",\"category\":\"Education\"},{\"title\":\"Dinner\",\"amount\":\"1800.00\",\"category\":\"Food & Dining\"},{\"title\":\"Mobile Recharge\",\"amount\":\"299.00\",\"category\":\"Bills & Utilities\"}]},{\"clusterId\":2,\"size\":1,\"averageAmount\":4500,\"totalAmount\":\"04500.00\",\"minAmount\":4500,\"maxAmount\":4500,\"mostCommonCategory\":\"Shopping\",\"categoryDistribution\":{\"Shopping\":1},\"examples\":[{\"title\":\"Clothes\",\"amount\":\"4500.00\",\"category\":\"Shopping\"}]},{\"clusterId\":3,\"size\":2,\"averageAmount\":null,\"totalAmount\":\"02500.003500.00\",\"minAmount\":2500,\"maxAmount\":3500,\"mostCommonCategory\":\"Groceries\",\"categoryDistribution\":{\"Bills & Utilities\":1,\"Groceries\":1},\"examples\":[{\"title\":\"Electricity Bill\",\"amount\":\"2500.00\",\"category\":\"Bills & Utilities\"},{\"title\":\"Groceries\",\"amount\":\"3500.00\",\"category\":\"Groceries\"}]}],\"spendingPatterns\":[],\"recommendations\":[\"Consider reducing high-value expenses by looking for alternatives or discounts\"],\"summary\":{\"totalExpenses\":10,\"totalSpent\":\"001200.001800.00299.00800.00600.001500.001200.0004500.0002500.003500.00\",\"averagePerExpense\":null}}'),
-(2, 1, '2025-12-08 08:13:16', 3, 'kmeans-v1', '{\"totalClusters\":3,\"clusterDetails\":[{\"clusterId\":1,\"size\":3,\"averageAmount\":566.3333333333334,\"totalAmount\":1699,\"minAmount\":299,\"maxAmount\":800,\"mostCommonCategory\":\"Entertainment\",\"categoryDistribution\":{\"Bills & Utilities\":1,\"Healthcare\":1,\"Entertainment\":1},\"examples\":[{\"title\":\"Mobile Recharge\",\"amount\":299,\"category\":\"Bills & Utilities\"},{\"title\":\"Medicine\",\"amount\":800,\"category\":\"Healthcare\"},{\"title\":\"Movie Ticket\",\"amount\":600,\"category\":\"Entertainment\"}]},{\"clusterId\":2,\"size\":3,\"averageAmount\":3500,\"totalAmount\":10500,\"minAmount\":2500,\"maxAmount\":4500,\"mostCommonCategory\":\"Groceries\",\"categoryDistribution\":{\"Shopping\":1,\"Bills & Utilities\":1,\"Groceries\":1},\"examples\":[{\"title\":\"Clothes\",\"amount\":4500,\"category\":\"Shopping\"},{\"title\":\"Electricity Bill\",\"amount\":2500,\"category\":\"Bills & Utilities\"},{\"title\":\"Groceries\",\"amount\":3500,\"category\":\"Groceries\"}]},{\"clusterId\":3,\"size\":4,\"averageAmount\":1425,\"totalAmount\":5700,\"minAmount\":1200,\"maxAmount\":1800,\"mostCommonCategory\":\"Food & Dining\",\"categoryDistribution\":{\"Education\":1,\"Food & Dining\":2,\"Transportation\":1},\"examples\":[{\"title\":\"Books\",\"amount\":1200,\"category\":\"Education\"},{\"title\":\"Dinner\",\"amount\":1800,\"category\":\"Food & Dining\"},{\"title\":\"Petrol\",\"amount\":1500,\"category\":\"Transportation\"}]}],\"spendingPatterns\":[\"Cluster 3: High-value expenses (avg ₹1425.00) in Food & Dining\"],\"recommendations\":[\"Consider reducing high-value expenses by looking for alternatives or discounts\"],\"summary\":{\"totalExpenses\":10,\"totalSpent\":17899,\"averagePerExpense\":1789.9}}'),
-(3, 1, '2025-12-08 08:13:33', 3, 'kmeans-v1', '{\"totalClusters\":3,\"clusterDetails\":[{\"clusterId\":1,\"size\":3,\"averageAmount\":1933.3333333333333,\"totalAmount\":5800,\"minAmount\":1500,\"maxAmount\":2500,\"mostCommonCategory\":\"Transportation\",\"categoryDistribution\":{\"Food & Dining\":1,\"Bills & Utilities\":1,\"Transportation\":1},\"examples\":[{\"title\":\"Dinner\",\"amount\":1800,\"category\":\"Food & Dining\"},{\"title\":\"Electricity Bill\",\"amount\":2500,\"category\":\"Bills & Utilities\"},{\"title\":\"Petrol\",\"amount\":1500,\"category\":\"Transportation\"}]},{\"clusterId\":2,\"size\":5,\"averageAmount\":819.8,\"totalAmount\":4099,\"minAmount\":299,\"maxAmount\":1200,\"mostCommonCategory\":\"Food & Dining\",\"categoryDistribution\":{\"Education\":1,\"Bills & Utilities\":1,\"Healthcare\":1,\"Entertainment\":1,\"Food & Dining\":1},\"examples\":[{\"title\":\"Books\",\"amount\":1200,\"category\":\"Education\"},{\"title\":\"Mobile Recharge\",\"amount\":299,\"category\":\"Bills & Utilities\"},{\"title\":\"Medicine\",\"amount\":800,\"category\":\"Healthcare\"}]},{\"clusterId\":3,\"size\":2,\"averageAmount\":4000,\"totalAmount\":8000,\"minAmount\":3500,\"maxAmount\":4500,\"mostCommonCategory\":\"Groceries\",\"categoryDistribution\":{\"Shopping\":1,\"Groceries\":1},\"examples\":[{\"title\":\"Clothes\",\"amount\":4500,\"category\":\"Shopping\"},{\"title\":\"Groceries\",\"amount\":3500,\"category\":\"Groceries\"}]}],\"spendingPatterns\":[],\"recommendations\":[\"Consider reducing high-value expenses by looking for alternatives or discounts\"],\"summary\":{\"totalExpenses\":10,\"totalSpent\":17899,\"averagePerExpense\":1789.9}}');
 
 -- --------------------------------------------------------
 
@@ -100,14 +154,21 @@ CREATE TABLE `expenses` (
 --
 
 INSERT INTO `expenses` (`id`, `user_id`, `title`, `category`, `amount`, `expense_date`, `description`, `payment_method`, `receipt_image`, `is_recurring`, `recurring_frequency`, `created_at`, `updated_at`) VALUES
-(21, 1, 'Lunch at Restaurant', 'Food & Dining', 1200.00, '2024-12-01', NULL, 'Cash', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(22, 1, 'Petrol for Bike', 'Transportation', 1500.00, '2024-12-02', NULL, 'Card', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(23, 1, 'Monthly Groceries', 'Groceries', 3500.00, '2024-12-03', NULL, 'Esewa', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(24, 1, 'Movie Tickets', 'Entertainment', 600.00, '2024-12-04', NULL, 'Khalti', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(25, 1, 'Electricity Bill', 'Bills & Utilities', 2500.00, '2024-12-05', NULL, 'Other', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(26, 1, 'Medicine', 'Healthcare', 800.00, '2024-12-06', NULL, 'Cash', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(27, 1, 'New Clothes', 'Shopping', 4500.00, '2024-12-07', NULL, 'Card', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-08 15:29:14'),
-(28, 1, 'College Books', 'Education', 12000.00, '2024-12-08', NULL, 'Card', NULL, 0, NULL, '2025-12-08 15:29:14', '2025-12-10 10:07:20');
+(61, 1, 'Lunch at Restaurant', 'Food & Dining', 1200.00, '2024-12-01', 'Office lunch', 'Cash', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(62, 1, 'Uber Ride', 'Transportation', 350.00, '2024-12-02', 'To office', 'Card', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(63, 1, 'Grocery Shopping', 'Groceries', 2800.00, '2024-12-03', 'Weekly groceries', 'Cash', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(64, 1, 'Movie Tickets', 'Entertainment', 800.00, '2024-12-04', 'Weekend movie', 'Esewa', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(65, 1, 'Electricity Bill', 'Bills & Utilities', 1500.00, '2024-12-05', 'Monthly bill', 'Khalti', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(66, 1, 'Coffee', 'Food & Dining', 250.00, '2024-12-06', 'Morning coffee', 'Card', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(67, 1, 'Petrol', 'Transportation', 1200.00, '2024-12-07', 'Bike fuel', 'Cash', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(68, 1, 'Clothes Shopping', 'Shopping', 4500.00, '2024-12-08', 'Winter clothes', 'Card', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(69, 1, 'Medicine', 'Healthcare', 850.00, '2024-12-09', 'Cold medicine', 'Cash', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(70, 1, 'Dinner', 'Food & Dining', 1800.00, '2024-12-10', 'Family dinner', 'Esewa', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(71, 1, 'Netflix Subscription', 'Entertainment', 650.00, '2024-12-11', 'Monthly subscription', 'Card', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(72, 1, 'Book Purchase', 'Education', 1200.00, '2024-12-12', 'Programming book', 'Card', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(73, 1, 'Gym Membership', 'Personal Care', 2000.00, '2024-12-13', 'Monthly fee', 'Khalti', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(74, 1, 'Taxi', 'Transportation', 450.00, '2024-12-14', 'Airport drop', 'Cash', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41'),
+(75, 1, 'Mobile Recharge', 'Bills & Utilities', 500.00, '2024-12-15', 'NTC recharge', 'Esewa', NULL, 0, NULL, '2025-12-10 13:35:41', '2025-12-10 13:35:41');
 
 -- --------------------------------------------------------
 
@@ -209,7 +270,7 @@ ALTER TABLE `budgets`
 -- AUTO_INCREMENT for table `expenses`
 --
 ALTER TABLE `expenses`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=76;
 
 --
 -- AUTO_INCREMENT for table `expense_clusters`

@@ -9,7 +9,7 @@ import Toast from './components/common/Toast';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import Expenses from './pages/Expenses';
+import Expenses from './pages/expenses';
 import Analysis from './pages/Analysis';
 import Profile from './pages/Profile';
 

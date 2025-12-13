@@ -42,40 +42,48 @@ const QuickAddExpense = ({ onExpenseAdded }) => {
     'Other'
   ];
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!formData.title || !formData.amount) {
-      toast.error('Please fill in required fields');
-      return;
-    }
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!formData.title || !formData.amount) {
+    toast.error('Please fill in required fields');
+    return;
+  }
 
-    try {
-      setLoading(true);
-      
-      await expenseService.createExpense(formData);
-      
-      toast.success('Expense added successfully!');
-      setIsOpen(false);
-      setFormData({
-        title: '',
-        category: 'Food & Dining',
-        amount: '',
-        expense_date: new Date().toISOString().split('T')[0],
-        description: '',
-        payment_method: 'Cash'
-      });
-      
-      if (onExpenseAdded) {
-        onExpenseAdded();
+  try {
+    setLoading(true);
+    
+    // Convert to FormData for consistency (even without files)
+    const formDataToSend = new FormData();
+    Object.keys(formData).forEach(key => {
+      if (formData[key] !== null && formData[key] !== undefined) {
+        formDataToSend.append(key, formData[key]);
       }
-    } catch (error) {
-      toast.error('Failed to add expense');
-      console.error('Add expense error:', error);
-    } finally {
-      setLoading(false);
+    });
+    
+    await expenseService.createExpense(formDataToSend);
+    
+    toast.success('Expense added successfully!');
+    setIsOpen(false);
+    setFormData({
+      title: '',
+      category: 'Food & Dining',
+      amount: '',
+      expense_date: new Date().toISOString().split('T')[0],
+      description: '',
+      payment_method: 'Cash'
+    });
+    
+    if (onExpenseAdded) {
+      onExpenseAdded();
     }
-  };
+  } catch (error) {
+    toast.error('Failed to add expense');
+    console.error('Add expense error:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleChange = (e) => {
     const { name, value } = e.target;

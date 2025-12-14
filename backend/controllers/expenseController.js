@@ -1,11 +1,12 @@
 const Expense = require('../models/Expense');
 const path = require('path');
 const fs = require('fs');
+const pool = require('../config/database').pool; // ADD THIS LINE for direct database queries
 
 // Get all expenses for a user
 const getAllExpenses = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id; // CHANGED from userId to id (based on your auth middleware)
     const { 
       startDate, 
       endDate, 
@@ -64,6 +65,179 @@ const getAllExpenses = async (req, res) => {
       message: 'Error fetching expenses'
     });
   }
+};
+
+// NEW: Get dashboard statistics (your version)
+const getDashboardStats = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        console.log('📊 Getting dashboard stats for user:', userId);
+
+        // Get total expenses and amount
+        const [stats] = await pool.execute(
+            `SELECT 
+                COUNT(*) as totalExpenses,
+                COALESCE(SUM(amount), 0) as totalSpent,
+                COALESCE(AVG(amount), 0) as averageExpense,
+                COALESCE(MIN(amount), 0) as minExpense,
+                COALESCE(MAX(amount), 0) as maxExpense
+            FROM expenses 
+            WHERE user_id = ?`,
+            [userId]
+        );
+
+        // Get this month's expenses
+        const [monthStats] = await pool.execute(
+            `SELECT 
+                COALESCE(SUM(amount), 0) as thisMonthSpent,
+                COUNT(*) as thisMonthCount
+            FROM expenses 
+            WHERE user_id = ? 
+            AND MONTH(expense_date) = MONTH(CURRENT_DATE())
+            AND YEAR(expense_date) = YEAR(CURRENT_DATE())`,
+            [userId]
+        );
+
+        // Get today's expenses
+        const [todayStats] = await pool.execute(
+            `SELECT 
+                COALESCE(SUM(amount), 0) as todaySpent,
+                COUNT(*) as todayCount
+            FROM expenses 
+            WHERE user_id = ? 
+            AND DATE(expense_date) = CURRENT_DATE()`,
+            [userId]
+        );
+
+        // Get most expensive category
+        const [categoryStats] = await pool.execute(
+            `SELECT 
+                category,
+                COALESCE(SUM(amount), 0) as total
+            FROM expenses 
+            WHERE user_id = ?
+            GROUP BY category
+            ORDER BY total DESC
+            LIMIT 1`,
+            [userId]
+        );
+
+        res.json({
+            success: true,
+            stats: {
+                ...stats[0],
+                ...monthStats[0],
+                ...todayStats[0],
+                topCategory: categoryStats[0]?.category || 'No expenses',
+                topCategoryAmount: categoryStats[0]?.total || 0
+            }
+        });
+    } catch (error) {
+        console.error('❌ Get dashboard stats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch dashboard statistics'
+        });
+    }
+};
+
+// NEW: Get paginated expenses with filters
+const getAllExpensesPaginated = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { page = 1, limit = 10, category, startDate, endDate } = req.query;
+        const offset = (page - 1) * limit;
+
+        let query = 'SELECT * FROM expenses WHERE user_id = ?';
+        const params = [userId];
+
+        if (category) {
+            query += ' AND category = ?';
+            params.push(category);
+        }
+
+        if (startDate) {
+            query += ' AND expense_date >= ?';
+            params.push(startDate);
+        }
+
+        if (endDate) {
+            query += ' AND expense_date <= ?';
+            params.push(endDate);
+        }
+
+        query += ' ORDER BY expense_date DESC, created_at DESC';
+
+        // Get total count
+        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total');
+        const [countResult] = await pool.execute(countQuery, params);
+        const total = countResult[0].total;
+
+        // Get paginated data
+        query += ' LIMIT ? OFFSET ?';
+        params.push(parseInt(limit), parseInt(offset));
+
+        const [expenses] = await pool.execute(query, params);
+
+        res.json({
+            success: true,
+            expenses,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('❌ Get expenses error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch expenses'
+        });
+    }
+};
+
+// NEW: Get category breakdown
+const getCategoryBreakdown = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const [categories] = await pool.execute(
+            `SELECT 
+                category,
+                COUNT(*) as count,
+                COALESCE(SUM(amount), 0) as total,
+                COALESCE(AVG(amount), 0) as average
+            FROM expenses 
+            WHERE user_id = ?
+            GROUP BY category
+            ORDER BY total DESC`,
+            [userId]
+        );
+
+        // Calculate total for percentages
+        const totalAmount = categories.reduce((sum, cat) => sum + parseFloat(cat.total), 0);
+
+        const categoryData = categories.map(cat => ({
+            ...cat,
+            percentage: totalAmount > 0 ? (parseFloat(cat.total) / totalAmount * 100).toFixed(1) : 0
+        }));
+
+        res.json({
+            success: true,
+            categories: categoryData,
+            totalAmount,
+            categoryCount: categories.length
+        });
+    } catch (error) {
+        console.error('❌ Get category breakdown error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch category breakdown'
+        });
+    }
 };
 
 // Get recent expenses
@@ -136,6 +310,77 @@ const getExpenseById = async (req, res) => {
   }
 };
 
+// Create expense
+const createExpense = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    // Handle both JSON and FormData
+    let {
+      title,
+      category,
+      amount,
+      expense_date,
+      description,
+      payment_method,
+      is_recurring,
+      recurring_frequency
+    } = req.body;
+
+    // Parse amount
+    amount = parseFloat(amount);
+    
+    // Handle file upload
+    let receipt_image = null;
+    if (req.file) {
+      receipt_image = `/uploads/receipts/${req.file.filename}`;
+    }
+
+    // Parse boolean values
+    const isRecurring = is_recurring === 'true' || is_recurring === true;
+
+    // Create expense
+    const expenseId = await Expense.create({
+      user_id: userId,
+      title,
+      category,
+      amount,
+      expense_date,
+      description: description || '',
+      payment_method: payment_method || 'Cash',
+      is_recurring: isRecurring,
+      recurring_frequency: isRecurring ? (recurring_frequency || 'Monthly') : null,
+      receipt_image
+    });
+
+    // Get the created expense
+    const expense = await Expense.findByIdAndUser(expenseId, userId);
+
+    res.status(201).json({
+      success: true,
+      message: 'Expense created successfully',
+      expense: {
+        id: expense.id,
+        title: expense.title,
+        category: expense.category,
+        amount: expense.amount,
+        expense_date: expense.expense_date,
+        description: expense.description,
+        payment_method: expense.payment_method,
+        is_recurring: Boolean(expense.is_recurring),
+        recurring_frequency: expense.recurring_frequency,
+        receipt_image: expense.receipt_image,
+        created_at: expense.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Create expense error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating expense'
+    });
+  }
+};
 
 // Update expense
 const updateExpense = async (req, res) => {
@@ -296,8 +541,8 @@ const getStatistics = async (req, res) => {
   }
 };
 
-// Get category breakdown
-const getCategoryBreakdown = async (req, res) => {
+// Get old category breakdown (keep for compatibility)
+const getCategoryBreakdownOld = async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -321,8 +566,8 @@ const getCategoryBreakdown = async (req, res) => {
   }
 };
 
-// Get dashboard statistics
-const getDashboardStats = async (req, res) => {
+// Get old dashboard statistics (keep for compatibility)
+const getDashboardStatsOld = async (req, res) => {
   try {
     const userId = req.user.userId;
     
@@ -377,76 +622,7 @@ const getDashboardStats = async (req, res) => {
     });
   }
 };
-const createExpense = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    
-    // Handle both JSON and FormData
-    let {
-      title,
-      category,
-      amount,
-      expense_date,
-      description,
-      payment_method,
-      is_recurring,
-      recurring_frequency
-    } = req.body;
 
-    // Parse amount
-    amount = parseFloat(amount);
-    
-    // Handle file upload
-    let receipt_image = null;
-    if (req.file) {
-      receipt_image = `/uploads/receipts/${req.file.filename}`;
-    }
-
-    // Parse boolean values
-    const isRecurring = is_recurring === 'true' || is_recurring === true;
-
-    // Create expense
-    const expenseId = await Expense.create({
-      user_id: userId,
-      title,
-      category,
-      amount,
-      expense_date,
-      description: description || '',
-      payment_method: payment_method || 'Cash',
-      is_recurring: isRecurring,
-      recurring_frequency: isRecurring ? (recurring_frequency || 'Monthly') : null,
-      receipt_image
-    });
-
-    // Get the created expense
-    const expense = await Expense.findByIdAndUser(expenseId, userId);
-
-    res.status(201).json({
-      success: true,
-      message: 'Expense created successfully',
-      expense: {
-        id: expense.id,
-        title: expense.title,
-        category: expense.category,
-        amount: expense.amount,
-        expense_date: expense.expense_date,
-        description: expense.description,
-        payment_method: expense.payment_method,
-        is_recurring: Boolean(expense.is_recurring),
-        recurring_frequency: expense.recurring_frequency,
-        receipt_image: expense.receipt_image,
-        created_at: expense.created_at
-      }
-    });
-  } catch (error) {
-    console.error('Create expense error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error creating expense'
-    });
-  }
-};
 module.exports = {
   getAllExpenses,
   getRecentExpenses,
@@ -455,6 +631,9 @@ module.exports = {
   updateExpense,
   deleteExpense,
   getStatistics,
-  getCategoryBreakdown,
-  getDashboardStats
+  getCategoryBreakdownOld,
+  getDashboardStatsOld,   
+    getDashboardStats,    
+  getAllExpensesPaginated,
+  getCategoryBreakdown    
 };

@@ -4,33 +4,38 @@ const {
     register, 
     login, 
     getProfile, 
-    updateProfile 
+    updateProfile,
+    changePassword,
+    deleteAccount
 } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+// Ensure uploads/profiles directory exists
+const profilesDir = path.join(__dirname, '../uploads/profiles');
+if (!fs.existsSync(profilesDir)) {
+    fs.mkdirSync(profilesDir, { recursive: true });
+    console.log('Created profiles directory:', profilesDir);
 }
 
-// Configure multer for profile pictures
+// Configure multer specifically for PROFILE pictures
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, uploadsDir);
+        // Save directly to uploads root folder (not profiles subfolder)
+        cb(null, path.join(__dirname, '../uploads'));
     },
     filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, 'profile-' + uniqueSuffix + ext);
     }
 });
 
 const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
     fileFilter: (req, file, cb) => {
         const allowedTypes = /jpeg|jpg|png|gif/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -48,13 +53,10 @@ const upload = multer({
 router.post('/register', register);
 router.post('/login', login);
 
-// Protected routes (require authentication)
+// Protected routes
 router.get('/profile', authMiddleware, getProfile);
 router.put('/profile', authMiddleware, upload.single('profile_picture'), updateProfile);
-
-// Simple test route
-router.get('/test', (req, res) => {
-    res.json({ message: 'Auth routes are working!' });
-});
+router.put('/change-password', authMiddleware, changePassword);
+router.delete('/account', authMiddleware, deleteAccount);
 
 module.exports = router;

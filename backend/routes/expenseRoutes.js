@@ -1,29 +1,27 @@
 const express = require('express');
 const router = express.Router();
+const expenseController = require('../controllers/expenseController');
 const authMiddleware = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
-// Configure multer for receipt uploads
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadsDir = path.join(__dirname, '../uploads/receipts');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    cb(null, uploadsDir);
+    cb(null, path.join(__dirname, '../uploads/receipts'));
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'receipt-' + uniqueSuffix + path.extname(file.originalname));
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
   }
 });
 
 const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
+  fileFilter: function (req, file, cb) {
+    // Accept images and PDFs
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
@@ -31,35 +29,21 @@ const upload = multer({
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Only images (jpeg, jpg, png) and PDF files are allowed'));
+      cb(new Error('Only image files (JPEG, JPG, PNG) and PDFs are allowed'));
     }
   }
 });
 
-const {
-  getAllExpenses,
-  getRecentExpenses,
-  getExpenseById,
-  createExpense,
-  updateExpense,
-  deleteExpense,
-  getStatistics,
-  getCategoryBreakdown,
-  getDashboardStats
-} = require('../controllers/expenseController');
+// Routes
+router.get('/', authMiddleware, expenseController.getAllExpenses);
+router.get('/dashboard-stats', authMiddleware, expenseController.getDashboardStats);
+router.get('/categories', authMiddleware, expenseController.getCategoryBreakdown);
+router.get('/recent', authMiddleware, expenseController.getRecentExpenses);
+router.get('/:id', authMiddleware, expenseController.getExpenseById);
 
-// All routes require authentication
-router.use(authMiddleware);
-
-// Expense CRUD operations
-router.get('/', getAllExpenses);
-router.get('/recent', getRecentExpenses);
-router.get('/statistics', getStatistics);
-router.get('/categories', getCategoryBreakdown);
-router.get('/dashboard-stats', getDashboardStats);
-router.get('/:id', getExpenseById);
-router.post('/', upload.single('receipt'), createExpense); // Add file upload middleware
-router.put('/:id', updateExpense);
-router.delete('/:id', deleteExpense);
+// Use multer middleware for file upload
+router.post('/', authMiddleware, upload.single('receipt'), expenseController.createExpense);
+router.put('/:id', authMiddleware, expenseController.updateExpense);
+router.delete('/:id', authMiddleware, expenseController.deleteExpense);
 
 module.exports = router;

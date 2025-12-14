@@ -10,21 +10,8 @@ const {
 } = require('../controllers/analysisController');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ✅ FIXED: Add debug middleware before auth
-router.use((req, res, next) => {
-    console.log(`📊 Analysis route called: ${req.method} ${req.path}`);
-    console.log('Headers:', req.headers);
-    next();
-});
-
-// ✅ FIXED: Use auth middleware for all routes
+// ✅ FIXED: Apply auth middleware to ALL analysis routes
 router.use(authMiddleware);
-
-// ✅ FIXED: Add route-specific debug middleware
-router.use((req, res, next) => {
-    console.log(`✅ User authenticated:`, req.user);
-    next();
-});
 
 // Analysis endpoints
 router.post('/cluster', runClustering);

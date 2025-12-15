@@ -12,6 +12,7 @@ import Dashboard from './pages/Dashboard';
 import Expenses from './pages/expenses';
 import Analysis from './pages/Analysis';
 import Profile from './pages/Profile';
+import BudgetsPage from './pages/BudgetsPage';
 
 function App() {
   return (
@@ -44,6 +45,11 @@ function App() {
                 <Profile />
               </PrivateRoute>
             } />
+           <Route path="/budgets" element={
+  <PrivateRoute>
+    <BudgetsPage />
+  </PrivateRoute>
+} />
             
             {/* Default redirect */}
             <Route path="/" element={<Navigate to="/dashboard" />} />

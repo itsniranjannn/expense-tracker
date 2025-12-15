@@ -338,31 +338,48 @@ const updateProfileWithImage = async (file) => {
     }
   };
 
-  const handleExportData = async () => {
-    try {
-      toast.loading('Preparing your data for export...');
-      const response = await expenseService.getAllExpenses();
-      
-      if (response.success && response.expenses) {
-        const dataStr = JSON.stringify(response.expenses, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-        
-        const exportFileDefaultName = `expense_data_${new Date().toISOString().split('T')[0]}.json`;
-        
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', exportFileDefaultName);
-        linkElement.click();
-        
-        toast.success('Data exported successfully!');
-      } else {
-        toast.error('No data to export');
-      }
-    } catch (error) {
-      console.error('Export data error:', error);
-      toast.error('Failed to export data');
+const handleExportData = async () => {
+  try {
+    toast.info('Preparing your data for export...');
+
+    const response = await expenseService.getAllExpenses();
+    console.log('Export response:', response);
+
+    const expenses =
+      response?.expenses ||
+      response?.data ||
+      response?.results ||
+      [];
+
+    if (!Array.isArray(expenses) || expenses.length === 0) {
+      toast.error('No data to export');
+      return;
     }
-  };
+
+    const dataStr = JSON.stringify(expenses, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const fileName = `expense_data_${new Date()
+      .toISOString()
+      .split('T')[0]}.json`;
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success('Data exported successfully!');
+  } catch (error) {
+    console.error('Export data error:', error);
+    toast.error('Failed to export data');
+  }
+};
+
 
   const formatCurrency = (amount) => {
     if (amount === null || amount === undefined || isNaN(amount)) return 'Rs 0.00';

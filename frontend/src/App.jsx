@@ -13,7 +13,7 @@ import Expenses from './pages/expenses';
 import Analysis from './pages/Analysis';
 import Profile from './pages/Profile';
 import BudgetsPage from './pages/BudgetsPage';
-
+import Help from './pages/Help';
 function App() {
   return (
     <AuthProvider>
@@ -50,7 +50,12 @@ function App() {
     <BudgetsPage />
   </PrivateRoute>
 } />
-            
+            <Route path="/help" element={
+              <PrivateRoute>
+                <Help />
+              </PrivateRoute>
+            } />
+
             {/* Default redirect */}
             <Route path="/" element={<Navigate to="/dashboard" />} />
           </Routes>

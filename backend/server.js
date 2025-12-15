@@ -4,14 +4,13 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
-const budgetRoutes = require('./routes/budgetRoutes');
 require('dotenv').config();
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
-
+const budgetRoutes = require('./routes/budgetRoutes');
 
 const app = express();
 
@@ -63,14 +62,49 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 }));
 
 // Database connection test
-const pool = require('./config/database').pool;
+const { pool } = require('./config/database');
 
+// Test database connection
 pool.getConnection((err, connection) => {
     if (err) {
         console.error('❌ Database connection failed:', err.message);
+        console.error('Error details:', err);
     } else {
         console.log('✅ Database connected successfully');
         connection.release();
+        
+        // Test query to check if budgets table exists
+        pool.query('SHOW TABLES LIKE "budgets"', (err, results) => {
+            if (err) {
+                console.error('❌ Error checking budgets table:', err.message);
+            } else if (results.length === 0) {
+                console.log('⚠️  Budgets table not found. Creating table...');
+                // Create budgets table if it doesn't exist
+                const createTableQuery = `
+                    CREATE TABLE IF NOT EXISTS budgets (
+                        id INT PRIMARY KEY AUTO_INCREMENT,
+                        user_id INT NOT NULL,
+                        category VARCHAR(50),
+                        amount DECIMAL(12, 2) NOT NULL,
+                        month_year DATE NOT NULL,
+                        color VARCHAR(7) DEFAULT '#3B82F6',
+                        icon VARCHAR(50) DEFAULT '💰',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                        UNIQUE KEY unique_user_category_month (user_id, category, month_year)
+                    )
+                `;
+                pool.query(createTableQuery, (err) => {
+                    if (err) {
+                        console.error('❌ Error creating budgets table:', err.message);
+                    } else {
+                        console.log('✅ Budgets table created successfully');
+                    }
+                });
+            } else {
+                console.log('✅ Budgets table exists');
+            }
+        });
     }
 });
 
@@ -81,7 +115,8 @@ app.get('/api/health', (req, res) => {
             return res.status(500).json({ 
                 success: false,
                 status: 'ERROR', 
-                message: 'Database connection failed'
+                message: 'Database connection failed',
+                error: process.env.NODE_ENV === 'development' ? err.message : undefined
             });
         }
         res.json({ 
@@ -89,7 +124,14 @@ app.get('/api/health', (req, res) => {
             status: 'OK', 
             message: 'Smart Budget Analyzer API is running',
             database: 'Connected',
-            version: '3.0.0'
+            version: '3.0.0',
+            endpoints: [
+                '/api/auth',
+                '/api/expenses',
+                '/api/analysis',
+                '/api/budgets',
+                '/api/health'
+            ]
         });
     });
 });
@@ -99,6 +141,30 @@ app.use('/api/auth', authRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/budgets', budgetRoutes);
+
+// Debug route to check all registered routes
+app.get('/api/debug/routes', (req, res) => {
+    const routes = [];
+    app._router.stack.forEach((middleware) => {
+        if (middleware.route) {
+            routes.push({
+                path: middleware.route.path,
+                methods: Object.keys(middleware.route.methods)
+            });
+        } else if (middleware.name === 'router') {
+            middleware.handle.stack.forEach((handler) => {
+                if (handler.route) {
+                    routes.push({
+                        path: handler.route.path,
+                        methods: Object.keys(handler.route.methods)
+                    });
+                }
+            });
+        }
+    });
+    res.json({ routes });
+});
+
 // Test endpoint for images
 app.get('/api/test-image/:filename', (req, res) => {
     const filename = req.params.filename;
@@ -193,13 +259,19 @@ app.use('*', (req, res, next) => {
     }
 });
 
-
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
     console.log(`\n🚀 Server running on port ${PORT}`);
     console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
     console.log(`📁 Static files: http://localhost:${PORT}/uploads/`);
-    console.log(`🖼️  Test existing image: http://localhost:${PORT}/uploads/profile-1765631351766-702622704.jpg`);
-    console.log(`\n✅ Ready to accept file uploads!\n`);
+    console.log(`📊 Budgets API: http://localhost:${PORT}/api/budgets`);
+    console.log(`🔍 Debug routes: http://localhost:${PORT}/api/debug/routes`);
+    console.log(`\n✅ All routes registered:`);
+    console.log(`   POST /api/budgets - Create new budget`);
+    console.log(`   GET  /api/budgets - Get all budgets`);
+    console.log(`   PUT  /api/budgets/:id - Update budget`);
+    console.log(`   DELETE /api/budgets/:id - Delete budget`);
+    console.log(`   GET  /api/budgets/stats - Get budget statistics`);
+    console.log(`\n✅ Ready to accept requests!\n`);
 });

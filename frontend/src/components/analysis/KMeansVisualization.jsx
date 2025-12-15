@@ -1,57 +1,119 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import { motion } from 'framer-motion';
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, Legend, ZAxis
 } from 'recharts';
-import { Target, Maximize2, Minimize2, Eye, EyeOff, Info } from 'lucide-react';
+import { Target, Maximize2, Minimize2, Eye, EyeOff, Info, DollarSign, Calendar } from 'lucide-react';
 
-const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick }) => {
-  const [viewMode, setViewMode] = useState('2d'); // '2d' or '3d'
+const KMeansVisualization = ({ clusters, scatterData = [], centroids = [], onClusterClick }) => {
+  const [viewMode, setViewMode] = useState('2d');
   const [selectedCluster, setSelectedCluster] = useState(null);
   const [showTooltip, setShowTooltip] = useState(true);
   const [zoom, setZoom] = useState(1);
+  const [processedData, setProcessedData] = useState({ scatterPoints: [], centroidPoints: [] });
 
-  // Prepare data for scatter plot
-  const prepareScatterData = () => {
+  // Process data when scatterData or centroids change
+  useEffect(() => {
+    const { scatterPoints, centroidPoints } = prepareVisualizationData();
+    setProcessedData({ scatterPoints, centroidPoints });
+  }, [scatterData, centroids]);
+
+  // Prepare data for scatter plot - FIXED VERSION
+  const prepareVisualizationData = () => {
     if (!scatterData || scatterData.length === 0) {
-      return [];
+      return { scatterPoints: [], centroidPoints: [] };
     }
-    
-    return scatterData.map((point, index) => ({
-      id: point.id || index,
-      x: point.x || point.amount || 0,
-      y: point.y || (point.date ? new Date(point.date).getTime() : index),
-      z: point.z || point.distanceToCenter || 1,
-      amount: point.amount || point.y || 0,
-      category: point.category || 'Unknown',
-      title: point.title || `Expense ${index + 1}`,
-      clusterId: point.clusterId || 0,
-      date: point.date || new Date().toISOString(),
-      distance: point.distanceToCenter || 0
-    }));
-  };
 
-  // Prepare centroid data
-  const prepareCentroidData = () => {
-    if (!centroids || centroids.length === 0) {
-      return [];
+    // Filter out invalid data
+    const validScatterData = scatterData.filter(point => {
+      const amount = point.amount || point.y || 0;
+      const date = point.date || point.x;
+      return amount > 0 && date;
+    });
+
+    // Prepare scatter points
+    const scatterPoints = validScatterData.map((point, index) => {
+      const amount = point.amount || point.y || 0;
+      let dateValue;
+      
+      // Handle date properly
+      if (point.date) {
+        if (typeof point.date === 'string') {
+          dateValue = new Date(point.date).getTime();
+        } else if (typeof point.date === 'number') {
+          dateValue = point.date;
+        } else {
+          dateValue = index; // Fallback
+        }
+      } else {
+        dateValue = index; // Fallback
+      }
+
+      return {
+        id: point.id || `point-${index}`,
+        x: amount, // Use actual amount for x-axis
+        y: dateValue, // Use timestamp for y-axis (will be formatted)
+        z: point.z || Math.sqrt(amount) * 10,
+        amount: parseFloat(amount),
+        category: point.category || 'Unknown',
+        title: point.title || `Expense ${index + 1}`,
+        clusterId: point.clusterId || 0,
+        date: point.date || new Date(dateValue).toISOString().split('T')[0],
+        distance: point.distanceToCenter || 0,
+        paymentMethod: point.paymentMethod || 'Cash'
+      };
+    });
+
+    // Prepare centroid points - FIXED
+    const centroidPoints = [];
+    if (centroids && centroids.length > 0) {
+      // Find min/max values from scatter data for proper centroid scaling
+      const amounts = scatterPoints.map(p => p.x).filter(val => !isNaN(val));
+      const dates = scatterPoints.map(p => p.y).filter(val => !isNaN(val));
+      
+      const minAmount = amounts.length > 0 ? Math.min(...amounts) : 0;
+      const maxAmount = amounts.length > 0 ? Math.max(...amounts) : 1000;
+      const minDate = dates.length > 0 ? Math.min(...dates) : Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const maxDate = dates.length > 0 ? Math.max(...dates) : Date.now();
+
+      centroids.forEach((centroid, index) => {
+        if (centroid.coordinates && Array.isArray(centroid.coordinates) && centroid.coordinates.length >= 2) {
+          // Convert normalized centroid coordinates (0-1) back to actual values
+          const normalizedAmount = centroid.coordinates[0] || 0;
+          const normalizedDate = centroid.coordinates[1] || 0;
+          
+          const actualAmount = minAmount + (normalizedAmount * (maxAmount - minAmount));
+          const actualDate = minDate + (normalizedDate * (maxDate - minDate));
+          
+          centroidPoints.push({
+            id: `centroid-${index}`,
+            x: actualAmount,
+            y: actualDate,
+            z: 5, // Higher z-index to appear above points
+            label: centroid.label || `Cluster ${index + 1} Center`,
+            clusterId: index + 1,
+            isCentroid: true,
+            size: 20
+          });
+        } else if (centroid.x && centroid.y) {
+          // If centroids already have x,y values
+          centroidPoints.push({
+            id: `centroid-${index}`,
+            x: parseFloat(centroid.x) || 0,
+            y: parseFloat(centroid.y) || Date.now(),
+            z: 5,
+            label: centroid.label || `Cluster ${index + 1} Center`,
+            clusterId: index + 1,
+            isCentroid: true,
+            size: 20
+          });
+        }
+      });
     }
-    
-    return centroids.map((centroid, index) => ({
-      id: `centroid-${index}`,
-      x: centroid.coordinates?.[0] || centroid.x || 0,
-      y: centroid.coordinates?.[1] || centroid.y || 0,
-      z: 3,
-      label: centroid.label || `Cluster ${index + 1}`,
-      clusterId: index + 1,
-      isCentroid: true
-    }));
-  };
 
-  const scatterPoints = prepareScatterData();
-  const centroidPoints = prepareCentroidData();
-  const allData = [...scatterPoints, ...centroidPoints];
+    return { scatterPoints, centroidPoints };
+  };
 
   // Color palette for clusters
   const clusterColors = [
@@ -74,21 +136,50 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
+      
       return (
-        <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg">
+        <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg max-w-xs">
           {data.isCentroid ? (
             <>
-              <p className="font-bold text-lg mb-2">{data.label}</p>
-              <p className="text-sm text-gray-600">Cluster Center Point</p>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-4 h-4 border-2 border-white bg-black rotate-45"></div>
+                <p className="font-bold text-lg">{data.label}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-gray-600">Center of Cluster {data.clusterId}</p>
+                <p className="text-sm text-gray-600">
+                  Avg Position: Rs {(data.x || 0).toLocaleString()}
+                </p>
+              </div>
             </>
           ) : (
             <>
-              <p className="font-bold">{data.title}</p>
-              <p className="text-sm text-gray-600">Amount: Rs {data.amount.toLocaleString()}</p>
-              <p className="text-sm text-gray-600">Category: {data.category}</p>
-              <p className="text-sm text-gray-600">
-                Cluster: {data.clusterId || 'Unassigned'}
-              </p>
+              <p className="font-bold text-gray-800 mb-2">{data.title}</p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-medium">Amount: Rs {data.amount.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div 
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: getClusterColor(data.clusterId) }}
+                  />
+                  <span className="text-sm text-gray-600">Cluster: {data.clusterId || 'Unassigned'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-600">
+                    Date: {new Date(data.date).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">Category: {data.category}</p>
+                <p className="text-sm text-gray-600">Payment: {data.paymentMethod}</p>
+              </div>
             </>
           )}
         </div>
@@ -97,13 +188,23 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
     return null;
   };
 
+  // Format date for Y-axis
+  const formatYAxis = (timestamp) => {
+    if (!timestamp || isNaN(timestamp)) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
   // Cluster summary cards
   const renderClusterCards = () => {
     if (!clusters || clusters.length === 0) {
       return (
         <div className="text-center py-8">
           <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600">No clusters to display</p>
+          <p className="text-gray-600">No clusters to display. Run K-Means analysis first.</p>
         </div>
       );
     }
@@ -156,13 +257,39 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
     );
   };
 
+  // Handle empty data state
+  if (processedData.scatterPoints.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-8 text-center">
+          <Target className="w-16 h-16 text-blue-400 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-gray-800 mb-2">No Visualization Data Available</h3>
+          <p className="text-gray-600 mb-4">
+            Run K-Means analysis to see your expenses clustered on the chart.
+          </p>
+          <div className="bg-white rounded-lg p-4 max-w-md mx-auto">
+            <p className="text-sm text-gray-600">
+              The visualization will show:
+            </p>
+            <ul className="text-sm text-gray-600 mt-2 space-y-1">
+              <li>• Each expense as a colored dot based on its cluster</li>
+              <li>• Cluster centers as diamond markers</li>
+              <li>• X-axis: Expense Amount (Rs)</li>
+              <li>• Y-axis: Date of expense</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-gray-50 p-4 rounded-xl">
         <div className="flex items-center space-x-4">
           <div className="text-sm font-medium text-gray-700">
-            {scatterPoints.length} expenses • {clusters?.length || 0} clusters
+            {processedData.scatterPoints.length} expenses • {clusters?.length || 0} clusters
           </div>
           
           <button
@@ -204,17 +331,19 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
           <button
             onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
             disabled={zoom <= 0.5}
-            className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm disabled:opacity-50"
+            className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
           >
             Zoom Out
           </button>
           
-          <span className="text-sm font-medium">{zoom.toFixed(1)}x</span>
+          <span className="text-sm font-medium bg-white px-3 py-1 rounded-lg border">
+            {zoom.toFixed(1)}x
+          </span>
           
           <button
             onClick={() => setZoom(Math.min(2, zoom + 0.1))}
             disabled={zoom >= 2}
-            className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm disabled:opacity-50"
+            className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50"
           >
             Zoom In
           </button>
@@ -227,10 +356,15 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
       {/* Visualization Chart */}
       <div className="bg-white rounded-xl p-6 shadow-lg">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold text-gray-800">K-Means Clusters Visualization</h3>
-          <div className="flex items-center text-sm text-gray-600">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">K-Means Clusters Visualization</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Each point represents an expense. Similar expenses are grouped together in clusters.
+            </p>
+          </div>
+          <div className="flex items-center text-sm text-blue-600">
             <Info className="w-4 h-4 mr-2" />
-            Each point represents an expense. Similar expenses are grouped together.
+            Click on points/clusters for details
           </div>
         </div>
         
@@ -242,59 +376,86 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
                 type="number"
                 dataKey="x"
                 name="Amount"
-                label={{ value: 'Expense Amount (Rs)', position: 'insideBottom', offset: -10 }}
-                tickFormatter={(value) => value.toLocaleString()}
+                label={{ 
+                  value: 'Expense Amount (Rs)', 
+                  position: 'insideBottom', 
+                  offset: -10,
+                  style: { fill: '#4B5563', fontWeight: '500' }
+                }}
+                tickFormatter={(value) => {
+                  if (value >= 1000000) return `Rs ${(value/1000000).toFixed(1)}M`;
+                  if (value >= 1000) return `Rs ${(value/1000).toFixed(0)}k`;
+                  return `Rs ${value}`;
+                }}
+                domain={['dataMin - 100', 'dataMax + 100']}
+                tick={{ fill: '#6B7280', fontSize: 12 }}
               />
               <YAxis
                 type="number"
                 dataKey="y"
-                name="Time"
-                label={{ value: 'Time Sequence', angle: -90, position: 'insideLeft' }}
-                tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                name="Date"
+                label={{ 
+                  value: 'Date', 
+                  angle: -90, 
+                  position: 'insideLeft',
+                  style: { fill: '#4B5563', fontWeight: '500' }
+                }}
+                tickFormatter={formatYAxis}
+                tick={{ fill: '#6B7280', fontSize: 12 }}
               />
               {viewMode === '3d' && (
                 <ZAxis
                   type="number"
                   dataKey="z"
                   range={[50, 400]}
-                  name="Cluster Density"
+                  name="Density"
                 />
               )}
               
               <Tooltip
                 content={<CustomTooltip />}
-                cursor={{ strokeDasharray: '3 3' }}
+                cursor={{ strokeDasharray: '3 3', stroke: '#9CA3AF' }}
               />
               
-              <Legend />
+              <Legend 
+                verticalAlign="top" 
+                height={36}
+                formatter={(value) => (
+                  <span className="text-sm font-medium text-gray-700">{value}</span>
+                )}
+              />
               
               {/* Expense points */}
               <Scatter
                 name="Expenses"
-                data={scatterPoints}
+                data={processedData.scatterPoints}
                 fillOpacity={0.7}
                 strokeWidth={1}
+                shape="circle"
               >
-                {scatterPoints.map((entry, index) => (
+                {processedData.scatterPoints.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={getClusterColor(entry.clusterId)}
-                    stroke={selectedCluster === entry.clusterId ? '#000' : '#fff'}
+                    stroke={selectedCluster === entry.clusterId ? '#1F2937' : '#ffffff'}
                     strokeWidth={selectedCluster === entry.clusterId ? 2 : 1}
                     onClick={() => handleClusterSelect(entry.clusterId)}
+                    style={{ cursor: 'pointer' }}
                   />
                 ))}
               </Scatter>
               
               {/* Centroid points */}
-              <Scatter
-                name="Cluster Centers"
-                data={centroidPoints}
-                shape="diamond"
-                fill="#000"
-                stroke="#fff"
-                strokeWidth={2}
-              />
+              {processedData.centroidPoints.length > 0 && (
+                <Scatter
+                  name="Cluster Centers"
+                  data={processedData.centroidPoints}
+                  shape="diamond"
+                  fill="#1F2937"
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                />
+              )}
             </ScatterChart>
           </ResponsiveContainer>
         </div>
@@ -312,41 +473,65 @@ const KMeansVisualization = ({ clusters, scatterData, centroids, onClusterClick 
                 <span className="text-sm text-gray-600">{cluster.label}</span>
               </div>
             ))}
-            <div className="flex items-center ml-4">
-              <div className="w-4 h-4 border-2 border-white bg-black rotate-45 mr-2"></div>
-              <span className="text-sm text-gray-600">Cluster Center</span>
-            </div>
+            {processedData.centroidPoints.length > 0 && (
+              <div className="flex items-center ml-4">
+                <div className="w-4 h-4 border-2 border-white bg-black rotate-45 mr-2"></div>
+                <span className="text-sm text-gray-600">Cluster Center</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Algorithm Explanation */}
+      {/* Chart Explanation */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6">
-        <h4 className="font-bold text-gray-800 mb-4">How K-Means Clustering Works:</h4>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <h4 className="font-bold text-gray-800 mb-4">How to Read This Chart:</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">1</div>
-            <h5 className="font-bold mb-2">Choose K Clusters</h5>
-            <p className="text-sm text-gray-600">Algorithm decides optimal number of groups (K) based on your data</p>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+              <h5 className="font-bold text-gray-800">Colored Dots</h5>
+            </div>
+            <p className="text-sm text-gray-600">
+              Each dot represents an expense. Color indicates which cluster it belongs to.
+            </p>
           </div>
           
           <div className="bg-white p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">2</div>
-            <h5 className="font-bold mb-2">Initialize Centroids</h5>
-            <p className="text-sm text-gray-600">Random starting points placed in data space</p>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-4 h-4 border-2 border-white bg-black rotate-45"></div>
+              <h5 className="font-bold text-gray-800">Diamond Markers</h5>
+            </div>
+            <p className="text-sm text-gray-600">
+              Show the center (average position) of each cluster.
+            </p>
           </div>
           
           <div className="bg-white p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">3</div>
-            <h5 className="font-bold mb-2">Assign Points</h5>
-            <p className="text-sm text-gray-600">Each expense assigned to nearest centroid based on amount & time</p>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-blue-600 font-bold">X-Axis</div>
+            </div>
+            <p className="text-sm text-gray-600">
+              Expense amount in Rupees. Higher values = more expensive items.
+            </p>
           </div>
           
           <div className="bg-white p-4 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600 mb-2">4</div>
-            <h5 className="font-bold mb-2">Update & Repeat</h5>
-            <p className="text-sm text-gray-600">Centroids move to cluster center until positions stabilize</p>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="text-blue-600 font-bold">Y-Axis</div>
+            </div>
+            <p className="text-sm text-gray-600">
+              Date of expense. Points near top = recent, bottom = older.
+            </p>
           </div>
+        </div>
+        
+        <div className="mt-4 p-4 bg-white/50 rounded-lg">
+          <p className="text-sm text-gray-700">
+            <span className="font-medium">Interpretation:</span> Expenses that are close together on this chart 
+            have similar spending patterns (similar amounts around similar times). K-Means algorithm automatically 
+            groups these into clusters for analysis.
+          </p>
         </div>
       </div>
     </div>

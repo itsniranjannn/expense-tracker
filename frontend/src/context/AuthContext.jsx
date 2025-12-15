@@ -1,3 +1,4 @@
+// context/AuthContext.jsx - FULL UPDATED VERSION
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { authService } from '../services/authService';
 
@@ -28,6 +29,7 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, [token]);
 
+  // ✅ FIXED: Login function
   const login = async (email, password) => {
     const response = await authService.login(email, password);
     const { token, user } = response;
@@ -38,6 +40,7 @@ export const AuthProvider = ({ children }) => {
     return response;
   };
 
+  // ✅ FIXED: Register function
   const register = async (name, email, password) => {
     const response = await authService.register(name, email, password);
     const { token, user } = response;

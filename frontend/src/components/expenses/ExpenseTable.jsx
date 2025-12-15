@@ -1,20 +1,142 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { PaymentIcon } from '../common/ImageAssets';
 import ViewExpenseModal from './ViewExpenseModal';
+import { 
+  Target, 
+  AlertTriangle, 
+  CheckCircle,
+  AlertCircle,
+  TrendingDown
+} from 'lucide-react';
 
-const ExpenseTable = ({ expenses, loading, onDelete, onEdit }) => {
+const ExpenseTable = ({ expenses, loading, onDelete, onEdit, budgets }) => {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [viewingExpense, setViewingExpense] = useState(null);
+  const [budgetStatuses, setBudgetStatuses] = useState({});
+  
   // Calculate pagination
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = expenses.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(expenses.length / itemsPerPage);
+
+  // Calculate budget statuses when expenses or budgets change
+  useEffect(() => {
+    if (expenses.length && budgets.length) {
+      calculateBudgetStatuses();
+    }
+  }, [expenses, budgets]);
+
+  // Calculate if expense exceeds budget
+  const calculateBudgetStatuses = () => {
+    const statuses = {};
+    
+    expenses.forEach(expense => {
+      const expenseDate = new Date(expense.expense_date);
+      const expenseMonth = expenseDate.getMonth();
+      const expenseYear = expenseDate.getFullYear();
+      
+      // Find matching budget for this category and month
+      const matchingBudget = budgets.find(budget => {
+        if (!budget.month_year) return false;
+        const budgetDate = new Date(budget.month_year);
+        return budget.category === expense.category && 
+               budgetDate.getMonth() === expenseMonth &&
+               budgetDate.getFullYear() === expenseYear;
+      });
+      
+      if (matchingBudget) {
+        // Get all expenses for this category in this month
+        const categoryMonthExpenses = expenses.filter(e => {
+          const eDate = new Date(e.expense_date);
+          return e.category === expense.category && 
+                 eDate.getMonth() === expenseMonth &&
+                 eDate.getFullYear() === expenseYear;
+        });
+        
+        const totalSpent = categoryMonthExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+        const budgetAmount = parseFloat(matchingBudget.amount || 0);
+        const percentage = budgetAmount > 0 ? (totalSpent / budgetAmount) * 100 : 0;
+        
+        statuses[expense.id] = {
+          budgeted: budgetAmount,
+          spent: totalSpent,
+          remaining: budgetAmount - totalSpent,
+          percentage: percentage,
+          status: percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'on_track'
+        };
+      }
+    });
+    
+    setBudgetStatuses(statuses);
+  };
+
+  // Budget status badge component
+  const BudgetStatusBadge = ({ expenseId }) => {
+    const status = budgetStatuses[expenseId];
+    
+    if (!status) return null;
+    
+    const getStatusColor = () => {
+      switch (status.status) {
+        case 'exceeded': return 'bg-red-100 text-red-800 border-red-200';
+        case 'warning': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        default: return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      }
+    };
+    
+    const getStatusIcon = () => {
+      switch (status.status) {
+        case 'exceeded': return <AlertTriangle className="w-3 h-3" />;
+        case 'warning': return <AlertCircle className="w-3 h-3" />;
+        default: return <CheckCircle className="w-3 h-3" />;
+      }
+    };
+    
+    return (
+      <div className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs border ${getStatusColor()}`}>
+        {getStatusIcon()}
+        <span className="ml-1">
+          {status.status === 'exceeded' ? 'Budget Exceeded' : 
+           status.status === 'warning' ? `${status.percentage.toFixed(0)}% Used` : 
+           `${status.percentage.toFixed(0)}% Used`}
+        </span>
+      </div>
+    );
+  };
+
+  // Budget tooltip for more details
+  const BudgetTooltip = ({ expenseId }) => {
+    const status = budgetStatuses[expenseId];
+    
+    if (!status) return null;
+    
+    return (
+      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block">
+        <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg whitespace-nowrap">
+          <div className="font-medium mb-1">Budget Status</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div>Budgeted:</div>
+            <div className="text-right">Rs {status.budgeted.toFixed(2)}</div>
+            <div>Spent:</div>
+            <div className="text-right">Rs {status.spent.toFixed(2)}</div>
+            <div>Remaining:</div>
+            <div className={`text-right ${status.remaining >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+              Rs {status.remaining.toFixed(2)}
+            </div>
+            <div>Usage:</div>
+            <div className="text-right">{status.percentage.toFixed(1)}%</div>
+          </div>
+        </div>
+        <div className="w-3 h-3 bg-gray-900 transform rotate-45 absolute left-1/2 -bottom-1 -translate-x-1/2"></div>
+      </div>
+    );
+  };
 
   // Pagination functions
   const nextPage = () => {
@@ -111,6 +233,7 @@ const ExpenseTable = ({ expenses, loading, onDelete, onEdit }) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Budget Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -141,23 +264,7 @@ const ExpenseTable = ({ expenses, loading, onDelete, onEdit }) => {
                   </td>
                   
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {editingId === expense.id ? (
-                      <select
-                        value={editForm.category}
-                        onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="Food & Dining">Food & Dining</option>
-                        <option value="Transportation">Transportation</option>
-                        <option value="Shopping">Shopping</option>
-                        <option value="Bills & Utilities">Bills & Utilities</option>
-                        <option value="Entertainment">Entertainment</option>
-                        <option value="Healthcare">Healthcare</option>
-                        <option value="Education">Education</option>
-                        <option value="Groceries">Groceries</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    ) : (
+                    <div className="flex items-center">
                       <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                         expense.category === 'Food & Dining' ? 'bg-blue-100 text-blue-800' :
                         expense.category === 'Transportation' ? 'bg-emerald-100 text-emerald-800' :
@@ -168,7 +275,11 @@ const ExpenseTable = ({ expenses, loading, onDelete, onEdit }) => {
                       }`}>
                         {expense.category}
                       </span>
-                    )}
+                      <div className="relative group">
+                        <BudgetStatusBadge expenseId={expense.id} />
+                        <BudgetTooltip expenseId={expense.id} />
+                      </div>
+                    </div>
                   </td>
                   
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -210,6 +321,62 @@ const ExpenseTable = ({ expenses, loading, onDelete, onEdit }) => {
                         <span className="text-sm text-gray-700">{expense.payment_method}</span>
                       </div>
                     )}
+                  </td>
+                  
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="relative group">
+                      <div className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
+                        budgetStatuses[expense.id]?.status === 'exceeded' 
+                          ? 'bg-red-50 text-red-700 border border-red-200' 
+                          : budgetStatuses[expense.id]?.status === 'warning'
+                          ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                          : budgetStatuses[expense.id] 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-gray-50 text-gray-700 border border-gray-200'
+                      }`}>
+                        {budgetStatuses[expense.id] ? (
+                          <>
+                            {budgetStatuses[expense.id].status === 'exceeded' && <AlertTriangle className="w-3 h-3 mr-1" />}
+                            {budgetStatuses[expense.id].status === 'warning' && <AlertCircle className="w-3 h-3 mr-1" />}
+                            {budgetStatuses[expense.id].status === 'on_track' && <CheckCircle className="w-3 h-3 mr-1" />}
+                            <span>
+                              {budgetStatuses[expense.id].status === 'exceeded' ? 'Exceeded' : 
+                               budgetStatuses[expense.id].status === 'warning' ? 'Warning' : 
+                               'On Track'}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Target className="w-3 h-3 mr-1" />
+                            <span>No Budget</span>
+                          </>
+                        )}
+                      </div>
+                      
+                      {/* Budget Details Tooltip */}
+                      {budgetStatuses[expense.id] && (
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10">
+                          <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg whitespace-nowrap">
+                            <div className="font-medium mb-1">Budget Details</div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                              <div>Budgeted:</div>
+                              <div className="text-right">Rs {budgetStatuses[expense.id].budgeted.toFixed(2)}</div>
+                              <div>Spent:</div>
+                              <div className="text-right">Rs {budgetStatuses[expense.id].spent.toFixed(2)}</div>
+                              <div>Remaining:</div>
+                              <div className={`text-right ${
+                                budgetStatuses[expense.id].remaining >= 0 ? 'text-emerald-300' : 'text-red-300'
+                              }`}>
+                                Rs {budgetStatuses[expense.id].remaining.toFixed(2)}
+                              </div>
+                              <div>Usage:</div>
+                              <div className="text-right">{budgetStatuses[expense.id].percentage.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                          <div className="w-3 h-3 bg-gray-900 transform rotate-45 absolute left-1/2 -bottom-1 -translate-x-1/2"></div>
+                        </div>
+                      )}
+                    </div>
                   </td>
                   
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -336,6 +503,7 @@ const ExpenseTable = ({ expenses, loading, onDelete, onEdit }) => {
         isOpen={!!viewingExpense}
         onClose={() => setViewingExpense(null)}
         expense={viewingExpense}
+        budgetStatus={budgetStatuses[viewingExpense?.id]}
       />
     </>
   );
